@@ -251,7 +251,8 @@ public partial class PanelWindow : Window
         if (target == 0 || !Native.IsWindow(target)) return false;   // nothing to paste into
         if (Native.IsTerminal(target)) return false;                 // never type into a shell; the user pastes there by hand
         if (ContextSensor.IsPrivate(Native.WindowTitle(target))) return false;
-        for (int i = 0; i < 40 && Native.ModifiersDown(); i++) await Task.Delay(25);   // a hotkey may still be held
+        for (int i = 0; i < 60 && Native.ModifiersDown(); i++) await Task.Delay(25);   // a hotkey may still be held
+        if (Native.ModifiersDown()) return false;                    // still held: Ctrl+V would become some other shortcut
         if (Native.GetForegroundWindow() != target)
         {
             Native.SetForegroundWindow(target);

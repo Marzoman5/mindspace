@@ -73,6 +73,12 @@ public partial class SageView : UserControl, IAgentView
         }
         else if (mode == "follow")
         {
+            if (_agent.IsCustom)
+            {
+                // a custom agent's follow-ups are whatever the user types; only Copy is universal
+                AddChip("Copy", () => { try { Clipboard.SetText(_history.LastOrDefault(m => m.Role == "assistant")?.Content ?? ""); } catch { } });
+                return;
+            }
             AddChip("Simpler", () => _ = RunAsync("Explain that again, much simpler, like I'm new to this. Keep it short.", "Simpler, please"));
             AddChip("Go deeper", () => _ = RunAsync("Go one level deeper on that. Stay clear and structured.", "Go deeper"));
             AddChip("Give an example", () => _ = RunAsync("Give me one concrete, real-world example of that.", "Give me an example"));

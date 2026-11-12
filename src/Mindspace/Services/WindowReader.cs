@@ -30,6 +30,9 @@ public static class WindowReader
     static Task<WindowText?> ReadOnceAsync(nint hwnd, int maxChars, bool selectionOnly, int timeoutMs)
     {
         if (!CanRead(hwnd)) return Task.FromResult<WindowText?>(null);
+        // A read that overruns its deadline cannot be interrupted from outside; until it returns, no new one starts,
+        // so slow apps can never pile up reader threads.
+        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0) return Task.FromResult<WindowText?>(null);
         var tcs = new TaskCompletionSource<WindowText?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         // UI Automation calls cross into the other app and can block; they get their own thread and a deadline.
@@ -37,11 +40,14 @@ public static class WindowReader
         {
             try { tcs.TrySetResult(Read(hwnd, maxChars, selectionOnly, deadline)); }
             catch { tcs.TrySetResult(null); }
+            finally { Interlocked.Exchange(ref _busy, 0); }
         }) { IsBackground = true, Name = "WindowReader" };
         th.SetApartmentState(ApartmentState.MTA);
         th.Start();
         return Task.WhenAny(tcs.Task, Task.Delay(timeoutMs + 400)).ContinueWith(t => tcs.Task.IsCompleted ? tcs.Task.Result : null);
     }
+
+    static int _busy;
 
     static WindowText? Read(nint hwnd, int max, bool selectionOnly, DateTime deadline)
     {
@@ -72,7 +78,7 @@ public static class WindowReader
                 if (DateTime.UtcNow > deadline) break;
                 if (d.TryGetCurrentPattern(TextPattern.Pattern, out var p))
                 {
-                    var t = ((TextPattern)p).DocumentRange.GetText(max);
+                    var t = ((TextPattern)p).DocumentRange.GetText(max * 4);
                     if (t.Length > sb.Length) { sb.Clear(); sb.Append(t); }
                 }
             }

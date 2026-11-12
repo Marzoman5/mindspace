@@ -80,6 +80,9 @@ public sealed class SettingsView : UserControl, IAgentView
     }
 
     CustomAgent? _editing;
+#if DEBUG
+    public void DebugEdit() { _editing = S.CustomAgents.FirstOrDefault(); Activate(null, false); }
+#endif
 
     FrameworkElement AgentRow(CustomAgent c)
     {

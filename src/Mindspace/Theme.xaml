@@ -9,7 +9,7 @@
     <Color x:Key="InkC">#F5F5FA</Color>
     <SolidColorBrush x:Key="Ink" Color="#F5F5FA"/>
     <SolidColorBrush x:Key="Muted" Color="#A3A3B8"/>
-    <SolidColorBrush x:Key="Faint" Color="#6C6C82"/>
+    <SolidColorBrush x:Key="Faint" Color="#7E7E96"/>
     <SolidColorBrush x:Key="Surface" Color="#12FFFFFF"/>
     <SolidColorBrush x:Key="SurfaceHi" Color="#22FFFFFF"/>
     <SolidColorBrush x:Key="Line" Color="#1CFFFFFF"/>
@@ -28,8 +28,8 @@
 
     <!-- Frosted variant: thinner tint, because the compositor blurs the desktop behind it -->
     <LinearGradientBrush x:Key="GlassFrost" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#B81A1A26" Offset="0"/>
-        <GradientStop Color="#C80E0E16" Offset="1"/>
+        <GradientStop Color="#CC1A1A26" Offset="0"/>
+        <GradientStop Color="#DA0E0E16" Offset="1"/>
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="GlassEdgeFrost" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Color="#55FFFFFF" Offset="0"/>

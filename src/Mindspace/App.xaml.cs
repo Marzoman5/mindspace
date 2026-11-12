@@ -61,6 +61,7 @@ public partial class App : Application
         Reminders = new ReminderStore();
         Notes = new NoteStore(Settings);
         Speech = new Speech(Settings);
+        Speech.SweepTemp();
         Sensor = new ContextSensor(Settings);
         Halo = new HaloWindow();
         Panel = new PanelWindow();
@@ -92,7 +93,12 @@ public partial class App : Application
     public void RestoreShell()
     {
         Native.SetTaskbarVisible(true);
-        if (Settings?.TaskbarAutoHideBefore is bool before) { Native.TaskbarAutoHide = before; Settings.TaskbarAutoHideBefore = null; Settings.Save(); }
+        if (Settings?.TaskbarAutoHideBefore is bool before)
+        {
+            Native.TaskbarAutoHide = before;
+            // Forget the remembered value only once Windows really has it back; otherwise the next start tries again.
+            if (Native.TaskbarAutoHide == before) { Settings.TaskbarAutoHideBefore = null; Settings.Save(); }
+        }
     }
 
     /// <summary>Hides the taskbar and frees its strip for windows, remembering how the user had it set.</summary>
@@ -178,12 +184,18 @@ public partial class App : Application
             case "ask": Panel.Open(arg1, rest, autoRun: true); break;       // fills the box and presses send, as the user would
             case "peek": Halo.Peek(new Suggestion(Agents.ById(arg1), rest.Length > 0 ? rest : Agents.ById(arg1).Tagline, arg1 switch { "quill" => "write", "patch" => "diagnose", _ => "explain" })); break;
             case "hover": Halo.DemoExpand(); break;
-            case "dictate": Halo.ToggleDictation(handsFree: true); break;   // same as tapping Alt+Shift+D
             case "quit": Quit(); break;
 #if DEBUG
             // Debug builds only (never compiled into Release): lets the automated test press "Insert".
             // Debug builds only: lets the automated test press Iris's Start button ("debug-start collect up" / "debug-start play").
             case "debug-start": Panel.Open("iris", arg1 == "play" ? "keep playing this game" : "collect all messages " + rest); Dispatcher.BeginInvoke(() => Panel.DebugView<Views.IrisView>("iris")?.DebugStart(), DispatcherPriority.ApplicationIdle); break;
+            // Debug builds only: adds a sample custom agent in memory (never saved) and opens its editor, or talks to it.
+            case "debug-agent":
+                if (Settings.CustomAgents.Count == 0) { Settings.CustomAgents.Add(new CustomAgent { Name = "Lingo", Role = "Translator", Prompt = "Translate whatever I give you into Spanish, then explain any idioms in one line.", SeesWindow = true, Triggers = "wikipedia", Palette = 4 }); Agents.Load(Settings); }
+                if (arg1 == "edit") { Panel.Open("settings"); Panel.DebugView<Views.SettingsView>("settings")?.DebugEdit(); }
+                else Panel.Open(Settings.CustomAgents[0].Id, rest.Length > 0 ? arg1 + " " + rest : arg1, autoRun: arg1.Length > 0);
+                break;
+            case "dictate": Halo.ToggleDictation(handsFree: true); break;   // test hook; Release builds have no way to open the microphone from the control channel
             case "debug-insert": Panel.InsertText(arg1 + (rest.Length > 0 ? " " + rest : "")); break;
 #endif
         }

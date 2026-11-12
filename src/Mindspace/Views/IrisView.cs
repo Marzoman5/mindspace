@@ -64,6 +64,8 @@ public sealed class IrisView : UserControl, IAgentView
         _answerScroll = new ScrollViewer { MaxHeight = 300, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _answer, Padding = new Thickness(0, 0, 8, 0), Margin = new Thickness(0, 12, -8, 0), Visibility = Visibility.Collapsed };
         root.Children.Add(_answerScroll);
         Content = root;
+        // Esc while a job runs stops the job (and is not passed on to close the panel).
+        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape && _cts != null) { _cts.Cancel(); e.Handled = true; } };
     }
 
     public void Activate(string? intent, bool autoRun)
@@ -83,7 +85,13 @@ public sealed class IrisView : UserControl, IAgentView
     void Retarget()
     {
         if (_cts != null) return;                       // a job keeps the window it started on
-        _target = App.Mind.Sensor.LastExternalWindow;
+        var now = App.Mind.Sensor.LastExternalWindow;
+        if (now != _target && _pending != null)
+        {
+            // The card was prepared for another window. It never follows the user to a new one: drop it.
+            _pending = null; _job.Visibility = Visibility.Collapsed;
+        }
+        _target = now;
         bool ok = WindowReader.CanRead(_target);
         _looking.Text = ok ? $"Looking at  {WindowReader.Pretty(Native.ProcessName(_target))}  ·  {Gen.OneLine(Native.WindowTitle(_target), 60)}"
                            : _target != 0 && Native.IsWindow(_target) ? "That window looks private, so I won't read it." : "Open the window you want help with, then come back.";
@@ -124,7 +132,7 @@ public sealed class IrisView : UserControl, IAgentView
             _answer.Text = "*reading the window…*";
             var read = await WindowReader.ReadAsync(_target, 9000);
             if (read == null) { _answer.Text = "I couldn't read that window. Some apps don't expose their text; try selecting it and pressing **Alt + Shift + E**."; return; }
-            var msgs = new List<ChatMsg> { new("system", Agents.IrisSystem), new("user", $"Window: {read.App} — {Gen.OneLine(read.Title, 80)}\n{Gen.AsContext(read.Text)}\n\n{question}") };
+            var msgs = new List<ChatMsg> { new("system", Agents.IrisSystem), new("user", Gen.AsContext($"Window: {read.App} — {Gen.OneLine(read.Title, 80)}\n\n{read.Text}") + "\n\n" + question) };
             _answer.Text = "*thinking…*";
             var r = await Gen.StreamAsync(Agents.Iris, App.Mind.Settings.ExplainerModel, msgs, t => { if (t.Length > 0) _answer.Text = $"**{shown}**\n\n{t}"; }, cts.Token, 0.4, 700);
             if (!r.Ok) _answer.Text = r.Error ?? "Something went wrong.";
@@ -144,16 +152,17 @@ public sealed class IrisView : UserControl, IAgentView
     void PrepareCollect(bool up)
     {
         if (!Guard()) return;
-        string app = WindowReader.Pretty(Native.ProcessName(_target));
+        nint win = _target;                              // the job is bound to the window named on the card
+        string app = WindowReader.Pretty(Native.ProcessName(win));
         Prepare($"Collect everything in {app} by scrolling {(up ? "up" : "down")}?",
             "I turn the mouse wheel over that window, read each screenful, and save the text to Notes. Nothing is typed or clicked. Esc stops it.",
             async ct =>
             {
                 App.Mind.Halo.Status(Agents.Iris, "Collecting… Esc to stop");
-                var text = await ScreenSkills.CollectAsync(_target, up, (lines, step) => Dispatcher.BeginInvoke(() => _jobText.Text = $"Collecting from {app}…  {lines} lines so far (screen {step})"), ct);
+                var text = await ScreenSkills.CollectAsync(win, up, (lines, step) => Dispatcher.BeginInvoke(() => _jobText.Text = $"Collecting from {app}…  {lines} lines so far (screen {step})"), ct);
                 App.Mind.Halo.HidePeek();
                 if (text.Length == 0) { Result("I couldn't read any text from that window."); return; }
-                App.Mind.Notes.Add("capture", Gen.OneLine(Native.WindowTitle(_target), 70), text, Native.ProcessName(_target));
+                App.Mind.Notes.Add("capture", Gen.OneLine(Native.WindowTitle(win), 70), text, Native.ProcessName(win));
                 Result($"Saved {text.Split('\n').Length} lines from {app} to Notes. Open Echo to search or copy them.");
             });
     }
@@ -161,14 +170,15 @@ public sealed class IrisView : UserControl, IAgentView
     void PrepareAutoplay()
     {
         if (!Guard()) return;
-        string app = WindowReader.Pretty(Native.ProcessName(_target));
+        nint win = _target;                              // the job is bound to the window named on the card
+        string app = WindowReader.Pretty(Native.ProcessName(win));
         Prepare($"Keep the runner game in {app} going?",
-            "For side-scrolling jump games. I watch a thin strip ahead of the runner and tap Space when something is coming — nothing else. Stops on Esc, when you switch windows, or after 15 minutes.",
+            "For side-scrolling jump games that are already running. I watch a thin strip ahead of the runner and tap Space when something is coming — nothing else. Stops on Esc, when you switch windows or tabs, when the game leaves the screen, or after 15 minutes.",
             async ct =>
             {
                 App.Mind.Panel.Dismiss();
                 App.Mind.Halo.Status(Agents.Iris, "Finding the game…");
-                var r = await ScreenSkills.AutoplayAsync(_target, TimeSpan.FromMinutes(15), s => Dispatcher.BeginInvoke(() => App.Mind.Halo.Status(Agents.Iris, s)), ct);
+                var r = await ScreenSkills.AutoplayAsync(win, TimeSpan.FromMinutes(15), s => Dispatcher.BeginInvoke(() => App.Mind.Halo.Status(Agents.Iris, s)), ct);
                 string done = r.Found ? $"Played for {(int)r.Played.TotalMinutes}:{r.Played.Seconds:00} — {r.Jumps} jumps, {r.Restarts + 1} run{(r.Restarts == 0 ? "" : "s")}. Stopped: {r.Why}." : $"Didn't start: {r.Why}.";
                 App.Mind.Halo.Status(Agents.Iris, Gen.OneLine(done, 60), 6);
                 Result(done);
@@ -198,6 +208,7 @@ public sealed class IrisView : UserControl, IAgentView
         if (_cts != null) { _cts.Cancel(); return; }
         if (_pending == null) return;
         var run = _pending; _pending = null;
+        if (!Guard()) return;                            // the window may have closed or changed since the card was prepared
         var cts = _cts = new CancellationTokenSource();
         _jobBtn.Content = "Stop"; _jobSub.Visibility = Visibility.Collapsed;
         App.Mind.Panel.SuppressDismiss = true;           // the panel stays up to show progress while the window is worked on

@@ -50,12 +50,14 @@ Agents also offer help on their own: Quill when a mail or chat window is in fron
 
 ![Echo: notes and history](docs/screens/echo.png)
 
+![Making your own agent](docs/screens/agents.png)
+
 ## What it costs your hardware (measured on this laptop)
 
 | | |
 |---|---|
 | Download | one 0.5 MB exe, no third-party packages. Voice adds a 5 MB engine and a 141 MB model |
-| Idle | 52 MB private memory; about 0.7% of one CPU core with the dock on |
+| Idle | 52 MB private memory; about 0.2% of one CPU core, measured with the dock on |
 | GPU when idle | none of its own: the UI is software-rendered, and the blur behind the glass is done by the Windows compositor |
 | While answering | 2.9 GB VRAM for the model, about 46–50 tokens/s, first word in 0.2–0.4 s when warm |
 | While dictating | CPU only, at below-normal priority: about 1 s for a 10 s sentence, 2 s for 30 s |
@@ -77,7 +79,7 @@ Short version: the app talks only to the model server on this PC, agents can onl
 - Dictation was tested with recorded audio files and by starting and stopping the microphone, not by a person speaking into it. Insert and the hotkeys were tested with simulated key presses against a test window, not against Outlook or Gmail themselves.
 - Reading a window depends on the app exposing its text to accessibility tools. It worked here on Chrome and on an Electron app; apps that draw their own text (some games, remote desktops) give nothing. In mail and chat windows the text includes menus and older messages, which a small model can trip over.
 - Collect keeps each distinct line once, so a chat that repeats "ok" loses the repeats.
-- Autoplay is for side-scrolling jump games at 100% page zoom. It scored over 1,400 in Chrome's offline game in the one long run tested, and does not duck.
+- Autoplay is for side-scrolling jump games at 100% page zoom, and the game must already be running when you press Start. It scored over 1,400 in Chrome's offline game in the one long run tested, and does not duck.
 - The dock shows running windows, Start and a clock. It has no system tray or pinned apps.
 - If another app already owns a hotkey, Mindspace's version silently does nothing; the island still works.
 - Small models make mistakes. Read a draft before sending it.

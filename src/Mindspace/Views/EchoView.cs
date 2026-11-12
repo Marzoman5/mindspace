@@ -69,8 +69,8 @@ public sealed class EchoView : UserControl, IAgentView
     {
         if (!_recording) Idle();
         Rebuild();
-        if (autoRun && !_recording && intent != null && System.Text.RegularExpressions.Regex.IsMatch(intent, @"\b(note|notes|record|listen|meeting)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)) Start();
-        else if (!string.IsNullOrEmpty(intent)) { _search.Text = intent; }
+        // A request that arrives as text ("Echo, take a note") only opens Echo. Recording starts from the button, nothing else.
+        if (!string.IsNullOrEmpty(intent) && !autoRun) _search.Text = intent;
     }
 
     void Idle()
@@ -101,7 +101,7 @@ public sealed class EchoView : UserControl, IAgentView
         var mic = App.Mind.Mic;
         var t = DateTime.Now - _started;
         _state.Text = $"Recording  {(int)t.TotalMinutes}:{t.Seconds:00}   " + new string('•', 1 + (int)(Math.Min(1, mic.Level * 3) * 9));
-        if (!App.Mind.Panel.IsOpen) App.Mind.Halo.Status(Agents.Echo, $"Taking notes  {(int)t.TotalMinutes}:{t.Seconds:00}  ·  click to open");
+        if (!App.Mind.Panel.IsOpen && !App.Mind.Halo.ShowingCard) App.Mind.Halo.Status(Agents.Echo, $"Taking notes  {(int)t.TotalMinutes}:{t.Seconds:00}  ·  click to open");
         // Hand the model a piece whenever the speaker pauses, or every 14 s if they don't.
         if (_busy || !(mic.Seconds >= 14 || mic.Seconds >= 4 && mic.Level < 0.02)) return;
         await TranscribeAsync(mic.Take());

@@ -97,10 +97,13 @@ Check("speech: tidy", Speech.Tidy(" [BLANK_AUDIO]  Hello   there. (music) ") == 
 Check("speech: silence", Speech.Tidy("[BLANK_AUDIO]") == "");
 Check("voice: tick", Speech.Addressed("Tick, remind me to call the dentist on Thursday at 3pm") is { } a1 && a1.agent == Agents.Tick && a1.rest == "remind me to call the dentist on Thursday at 3pm");
 Check("voice: hey iris", Speech.Addressed("Hey Iris, read through this chat and copy all the messages.") is { } a2 && a2.agent == Agents.Iris);
-Check("voice: misheard name", Speech.Addressed("Quil write a thank you note to Dana") is { } a3 && a3.agent == Agents.Quill);
+Check("voice: misheard name", Speech.Addressed("Quil, write a thank you note to Dana") is { } a3 && a3.agent == Agents.Quill);
 Check("voice: plain dictation", Speech.Addressed("I think we should move the meeting to Friday.") == null);
 Check("voice: name mid-sentence", Speech.Addressed("The sage advice was to wait.") == null);
 Check("voice: name only", Speech.Addressed("Patch.") == null);
+Check("voice: verb, not a name", Speech.Addressed("Patch the server tonight and tick the box.") == null && Speech.Addressed("Tick the box on the form") == null);
+Check("voice: greeting without comma", Speech.Addressed("hey sage what is an API") is { } a4 && a4.agent == Agents.Sage && a4.rest == "what is an API");
+Check("window: head and tail", WindowReader.HeadTail(new string('a', 300) + new string('z', 700), 300) is { Length: <= 300 } ht && ht.StartsWith("aaa") && ht.EndsWith("zzz"));
 
 // window text: blank runs collapse, repeated labels are read once
 Check("window: clean", WindowReader.Clean("Inbox\r\n\r\n\r\nInbox\nHello Sam\n   \n\nSee you at 3\n") == "Inbox\n\nHello Sam\n\nSee you at 3", WindowReader.Clean("Inbox\r\n\r\n\r\nInbox\nHello Sam\n   \n\nSee you at 3\n").Replace("\n", "|"));

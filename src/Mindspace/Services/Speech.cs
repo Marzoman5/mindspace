@@ -52,23 +52,25 @@ public sealed class Recorder : IDisposable
     void Pump()
     {
         var chunk = new byte[BufferBytes];
+        int next = 0;                                   // the driver fills buffers in the order they were queued
         while (_run)
         {
-            for (int i = 0; i < Buffers && _run; i++)
-            {
-                var hdr = Marshal.PtrToStructure<Native.WAVEHDR>(_hdr[i]);
-                if ((hdr.dwFlags & 1 /*WHDR_DONE*/) == 0) continue;
-                int n = (int)Math.Min(hdr.dwBytesRecorded, BufferBytes);
-                Marshal.Copy(_buf[i], chunk, 0, n);
-                int peak = 0;
-                for (int k = 0; k + 1 < n; k += 2) peak = Math.Max(peak, Math.Abs((int)BitConverter.ToInt16(chunk, k)));
-                Level = peak / 32768.0;
-                lock (_lock) _pcm.Write(chunk, 0, n);
-                if (_run) Native.waveInAddBuffer(_h, _hdr[i], HdrSize);
-            }
-            Thread.Sleep(25);
+            var hdr = Marshal.PtrToStructure<Native.WAVEHDR>(_hdr[next]);
+            if ((hdr.dwFlags & 1 /*WHDR_DONE*/) == 0) { Thread.Sleep(15); continue; }
+            int n = (int)Math.Min(hdr.dwBytesRecorded, BufferBytes);
+            Marshal.Copy(_buf[next], chunk, 0, n);
+            int peak = 0;
+            for (int k = 0; k + 1 < n; k += 2) peak = Math.Max(peak, Math.Abs((int)BitConverter.ToInt16(chunk, k)));
+            Level = peak / 32768.0;
+            lock (_lock) _pcm.Write(chunk, 0, n);
+            if (_stopping) { if (++_drained >= Buffers) break; }      // after waveInReset every buffer comes back once: take them all, queue none
+            else Native.waveInAddBuffer(_h, _hdr[next], HdrSize);
+            next = (next + 1) % Buffers;
         }
     }
+
+    volatile bool _stopping;
+    int _drained;
 
     /// <summary>Everything recorded so far, and starts a fresh buffer. Used for live notes.</summary>
     public byte[] Take()
@@ -79,9 +81,12 @@ public sealed class Recorder : IDisposable
     public byte[] Stop()
     {
         if (!_run) return [];
+        _drained = 0; _stopping = true;
+        Native.waveInReset(_h);                         // hands every queued buffer back, marked done, including the partial one
+        _pump?.Join(1000);                              // the pump collects them and ends by itself
         _run = false;
-        _pump?.Join(300);
-        Native.waveInReset(_h);
+        _pump?.Join();                                  // never free memory the pump could still be reading
+        _stopping = false;
         for (int i = 0; i < Buffers; i++)
         {
             Native.waveInUnprepareHeader(_h, _hdr[i], HdrSize);
@@ -153,9 +158,16 @@ public sealed class Speech
                 if (p.ExitCode != 0) throw new InvalidOperationException("The speech engine reported an error.");
                 return Tidy(text);
             }
-            catch (OperationCanceledException) { try { p.Kill(); } catch { } throw; }
+            catch (OperationCanceledException) { try { p.Kill(); p.WaitForExit(2000); } catch { } throw; }   // wait, so the file below can be deleted
         }
         finally { try { File.Delete(wav); } catch { } }
+    }
+
+    /// <summary>Removes audio files a crash or a forced quit may have left in the temp folder. Called once at start.</summary>
+    public static void SweepTemp()
+    {
+        try { foreach (var f in Directory.EnumerateFiles(Path.GetTempPath(), "mindspace-*.wav")) try { File.Delete(f); } catch { } }
+        catch { }
     }
 
     /// <summary>Whisper marks non-speech as [BLANK_AUDIO], (music) and the like; those are not words the user said.</summary>
@@ -167,13 +179,15 @@ public sealed class Speech
     /// </summary>
     public static (Agent agent, string rest)? Addressed(string text)
     {
-        var m = Regex.Match(text, @"^\s*(?:hey|ok|okay|hi)?[\s,]*([A-Za-z]{3,14})\s*[,:.!?-]*\s+(.{3,})$", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-        if (!m.Success) return null;
-        string said = m.Groups[1].Value.ToLowerInvariant();
+        // Either a greeting ("hey Tick remind me…") or a pause after the name ("Tick, remind me…"), which the speech
+        // model writes as punctuation. "Patch the server tonight" is ordinary dictation and stays that way.
+        var m = Regex.Match(text, @"^\s*(?:(?<hey>hey|ok|okay|hi)[\s,]+)?(?<name>[A-Za-z]{3,14})(?<stop>\s*[,:.!?]+)?\s+(?<rest>.{3,})$", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (!m.Success || !(m.Groups["hey"].Success || m.Groups["stop"].Success)) return null;
+        string said = m.Groups["name"].Value.ToLowerInvariant();
         foreach (var a in Agents.All)
         {
             string name = a.Name.ToLowerInvariant();
-            if (said == name || Heard.TryGetValue(name, out var alts) && alts.Contains(said)) return (a, m.Groups[2].Value.Trim());
+            if (said == name || Heard.TryGetValue(name, out var alts) && alts.Contains(said)) return (a, m.Groups["rest"].Value.Trim());
         }
         return null;
     }
@@ -181,7 +195,7 @@ public sealed class Speech
     // What a speech model tends to write when someone says an agent's name.
     static readonly Dictionary<string, string[]> Heard = new()
     {
-        ["quill"] = ["quil", "kwill", "quell"], ["tick"] = ["tic", "tik"], ["sage"] = ["sayge", "siege"],
-        ["patch"] = ["pach"], ["echo"] = ["eko", "ecco"], ["iris"] = ["irs", "irish", "ires"],
+        ["quill"] = ["quil", "kwill"], ["tick"] = ["tik"], ["sage"] = ["sayge"],
+        ["patch"] = ["pach"], ["echo"] = ["eko", "ecco"], ["iris"] = ["ires"],
     };
 }

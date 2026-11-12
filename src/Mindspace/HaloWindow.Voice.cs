@@ -20,6 +20,8 @@ public partial class HaloWindow
     nint _talkTarget;
 
     public bool IsDictating => _talk.IsEnabled || _talkBusy;
+    /// <summary>A suggestion or reminder card (not a status line) is on screen and should not be replaced.</summary>
+    public bool ShowingCard => _peek != null && _peek.Kind != "status";
 
     void InitVoice() => _talk.Tick += (_, _) => TalkTick();
 
@@ -75,7 +77,9 @@ public partial class HaloWindow
             }
             if (_toPanel && App.Mind.Panel.IsOpen) { HidePeek(); App.Mind.Panel.TypeIntoFocus(text); return; }
 
-            App.Mind.Notes.Add("dictation", Gen.OneLine(text, 60), text, Native.ProcessName(_talkTarget));
+            // Words spoken at a private window (password manager, banking, private browsing) are not kept in history.
+            if (!ContextSensor.IsPrivate(Native.WindowTitle(_talkTarget)))
+                App.Mind.Notes.Add("dictation", Gen.OneLine(text, 60), text, Native.ProcessName(_talkTarget));
             bool typed = await App.Mind.Panel.PasteIntoAsync(_talkTarget, text);
             int words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
             Status(Agents.Echo, typed ? $"Typed {words} word{(words == 1 ? "" : "s")}" : "Copied — press Ctrl+V to paste it", typed ? 2 : 5);

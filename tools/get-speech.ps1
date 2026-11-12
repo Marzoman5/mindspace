@@ -13,9 +13,12 @@ function Get-Checked($url, $file, $sha256) {
     if ((Test-Path $file) -and (Get-FileHash $file -Algorithm SHA256).Hash -eq $sha256) { return }
     Write-Host "Downloading $url"
     $ProgressPreference = 'SilentlyContinue'
-    Invoke-WebRequest $url -OutFile $file -UseBasicParsing
-    $got = (Get-FileHash $file -Algorithm SHA256).Hash
-    if ($got -ne $sha256) { Remove-Item $file; throw "Checksum mismatch for $url (got $got). Nothing was installed from it." }
+    # Download beside the destination under another name, so an interrupted or wrong file never looks installed.
+    $part = "$file.part"
+    Invoke-WebRequest $url -OutFile $part -UseBasicParsing
+    $got = (Get-FileHash $part -Algorithm SHA256).Hash
+    if ($got -ne $sha256) { Remove-Item $part; throw "Checksum mismatch for $url (got $got). Nothing was installed from it." }
+    Move-Item $part $file -Force
 }
 
 try {

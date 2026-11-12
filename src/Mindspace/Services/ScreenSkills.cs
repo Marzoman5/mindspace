@@ -36,7 +36,10 @@ public static class ScreenSkills
             }
             progress(lines.Count, step);
             Native.WheelScroll(hwnd, up ? 5 : -5);
-            try { await Task.Delay(650, ct); } catch (OperationCanceledException) { break; }
+            bool esc = false;
+            try { for (int i = 0; i < 13 && !esc; i++) { await Task.Delay(50, ct); esc = Native.KeyDown(0x1B); } }      // Esc is noticed within 50 ms
+            catch (OperationCanceledException) { break; }
+            if (esc) break;
         }
         return string.Join("\n", lines);
     }
@@ -60,22 +63,33 @@ public static class ScreenSkills
         await Task.Delay(350);
         if (Native.GetForegroundWindow() != hwnd) return new(false, 0, 0, TimeSpan.Zero, "the window did not come to the front");
 
-        // Find the track: start the game, then look for the long ground line the runner stands on.
+        // Find the track first. Nothing is pressed until a running game has been recognised in that window.
+        string title = Native.WindowTitle(hwnd);
         Track? track = null;
-        for (int attempt = 0; attempt < 6 && Go() && track == null; attempt++)
+        for (int attempt = 0; attempt < 10 && Go() && track == null; attempt++)
         {
-            if (attempt % 2 == 0) Native.TapKey(0x20);
-            await Task.Delay(900);
             track = FindTrack(hwnd);
+            if (track == null) await Task.Delay(400);
         }
-        if (track == null) return new(false, 0, 0, clock.Elapsed, Go() ? "I couldn't find a runner game in that window" : Why());
+        if (track == null) return new(false, 0, 0, clock.Elapsed, Go() ? "I couldn't see a runner game in that window. Start the game, then press Start again" : Why());
         var t = track.Value;
         status("Playing — Esc to stop");
 
         var run = Stopwatch.StartNew();          // time in the current run: these games speed up as they go
-        long lastJump = 0, lastChange = 0; int lastSum = -1;
+        long lastJump = 0, lastChange = 0, lastCheck = 0; int lastSum = -1, missing = 0;
+        string why = "";
         while (Go())
         {
+            // Once a second: is this still the same page, and is the ground line still where it was? If the user
+            // switched tab or the page changed, stop — Space must never go to anything but the game.
+            if (clock.ElapsedMilliseconds - lastCheck > 1000)
+            {
+                lastCheck = clock.ElapsedMilliseconds;
+                if (Native.WindowTitle(hwnd) != title || !Allowed(hwnd)) { why = "the window changed"; break; }
+                missing = GroundStillThere(t) ? 0 : missing + 1;
+                if (missing >= 3) { why = "the game is no longer on screen"; break; }
+            }
+            if (missing > 0) { try { await Task.Delay(100, ct); } catch (OperationCanceledException) { break; } continue; }
             // The strip starts just in front of the runner and reaches further ahead the faster the game is going.
             double speed = Math.Min(13, 6 + run.Elapsed.TotalSeconds * 0.06);
             int x0 = t.Left + (int)(94 * t.Scale), w = Math.Max(8, (int)(speed * 13 * t.Scale)), y0 = t.Ground - (int)(48 * t.Scale), h = (int)(40 * t.Scale);   // from the runner's head down to just above the ground
@@ -102,14 +116,26 @@ public static class ScreenSkills
             }
             try { await Task.Delay(8, ct); } catch (OperationCanceledException) { break; }
         }
-        Trace($"end: jumps={jumps} restarts={restarts} why={Why()}");
-        return new(true, jumps, restarts, clock.Elapsed, Why());
+        if (why.Length == 0) why = Why();
+        Trace($"end: jumps={jumps} restarts={restarts} why={why}");
+        return new(true, jumps, restarts, clock.Elapsed, why);
     }
 
     [Conditional("DEBUG")]
     static void Trace(string line) { try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ms-play.txt"), line + "\n"); } catch { } }
 
-    readonly record struct Track(int Left, int Ground, double Scale);
+    readonly record struct Track(int Left, int Ground, double Scale, int Length);
+
+    /// <summary>The line the runner stands on is still drawn where it was found (in either day or night colours).</summary>
+    static bool GroundStillThere(Track t)
+    {
+        int up = (int)(70 * t.Scale);
+        var px = Native.Grab(t.Left, t.Ground - up, t.Length, up + 1);
+        if (px == null) return false;
+        int sky = Lum(px, (t.Length - 1) * 4), ink = 0, n = 0;       // top-right corner of the play area is empty sky
+        for (int col = 0; col < t.Length; col += 3) { n++; if (Math.Abs(Lum(px, (up * t.Length + col) * 4) - sky) > 70) ink++; }
+        return ink > n * 0.4;
+    }
 
     static int Lum(byte[] px, int i) => (px[i] * 11 + px[i + 1] * 59 + px[i + 2] * 30) / 100;
 
@@ -154,7 +180,7 @@ public static class ScreenSkills
             double sky = Ink(gx + (int)(90 * k), gy - (int)(120 * k), gx + len, gy - (int)(60 * k));
             double runner = Ink(gx + (int)(18 * k), gy - (int)(44 * k), gx + (int)(66 * k), gy - (int)(4 * k));
             Trace($"track? y={y + gy} x={x + gx} len={len} k={k:0.00} below={below:0.000} sky={sky:0.000} runner={runner:0.00}");
-            if (below <= 0.01 && sky <= 0.06 && runner >= 0.12 && runner <= 0.75) return new Track(x + gx, y + gy, k);
+            if (below <= 0.01 && sky <= 0.06 && runner >= 0.12 && runner <= 0.75) return new Track(x + gx, y + gy, k, len);
         }
         return null;
     }
