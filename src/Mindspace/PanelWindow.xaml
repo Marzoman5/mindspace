@@ -1,0 +1,53 @@
+<Window x:Class="Mindspace.PanelWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:Mindspace.Controls"
+        Title="Mindspace" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize" SizeToContent="Height"
+        Width="476" UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Ideal" FontFamily="{StaticResource UiText}" FontSize="13" Foreground="{StaticResource Ink}">
+    <Grid>
+    <c:SoftShadow x:Name="Shade" Margin="18,7,18,30" Radius="24" Opacity="0" IsHitTestVisible="False"/>
+    <Border x:Name="Shell" Margin="18,7,18,30" CornerRadius="24" Background="{StaticResource Glass}"
+            BorderBrush="{StaticResource GlassEdge}" BorderThickness="1" RenderTransformOrigin="0.5,0" Opacity="0">
+        <Border.RenderTransform>
+            <TransformGroup>
+                <ScaleTransform x:Name="ShellScale" ScaleX="0.9" ScaleY="0.9"/>
+                <TranslateTransform x:Name="ShellShift" Y="-10"/>
+            </TransformGroup>
+        </Border.RenderTransform>
+        <Grid x:Name="Clipper">
+            <!-- the active agent's colour, breathing behind the header -->
+            <Ellipse x:Name="Aura" Width="520" Height="230" VerticalAlignment="Top" Margin="-40,-128,-40,0" IsHitTestVisible="False"/>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Grid Margin="14,13,12,10">
+                    <StackPanel x:Name="Tabs" Orientation="Horizontal"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <ToggleButton x:Name="PinBtn" Style="{StaticResource IconBtn}" Content="&#xE718;" ToolTip="Keep open" Click="Pin_Click"/>
+                        <Button Style="{StaticResource IconBtn}" Content="&#xE713;" ToolTip="Settings" Click="Settings_Click" Margin="2,0,0,0"/>
+                    </StackPanel>
+                </Grid>
+
+                <ContentControl x:Name="Body" Grid.Row="1" Focusable="False"/>
+
+                <Border Grid.Row="2" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="18,7,16,9">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="StatusDot" Width="6" Height="6" Fill="{StaticResource Good}" VerticalAlignment="Center" Margin="0,1,7,0"/>
+                            <TextBlock x:Name="StatusText" FontSize="10.5" Foreground="{StaticResource Faint}" Text="On-device"/>
+                            <Button x:Name="StartOllama" Content="Start it" Visibility="Collapsed" Style="{StaticResource Chip}" FontSize="10.5" Padding="8,1,8,2" Margin="8,0,0,0" Click="StartOllama_Click"/>
+                        </StackPanel>
+                        <TextBlock HorizontalAlignment="Right" FontSize="10.5" Foreground="{StaticResource Faint}" Text="Ctrl + Alt + Space"/>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </Border>
+    </Grid>
+</Window>

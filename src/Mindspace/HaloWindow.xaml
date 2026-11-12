@@ -1,0 +1,46 @@
+<Window x:Class="Mindspace.HaloWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:Mindspace.Controls"
+        Title="Mindspace Halo" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ShowActivated="False" ResizeMode="NoResize"
+        Width="480" Height="130" UseLayoutRounding="True" SnapsToDevicePixels="True"
+        FontFamily="{StaticResource UiText}" FontSize="13" Foreground="{StaticResource Ink}" TextOptions.TextFormattingMode="Ideal">
+    <Grid>
+        <!-- The island: a sliver at the top edge that opens into the four agents on hover -->
+        <Border x:Name="Island" Width="78" Height="9" HorizontalAlignment="Center" VerticalAlignment="Top"
+                Background="#F00A0A0F" BorderBrush="{StaticResource GlassEdge}" BorderThickness="1,0,1,1" CornerRadius="0,0,13,13"
+                Cursor="Hand" MouseEnter="Island_Enter" MouseLeave="Island_Leave" MouseLeftButtonUp="Island_Click"
+                ToolTipService.InitialShowDelay="900">
+            <Grid>
+                <Border x:Name="Spark" Width="42" Height="3" CornerRadius="1.5" VerticalAlignment="Center" Margin="0,0,0,1">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#FA7E1E" Offset="0"/>
+                            <GradientStop Color="#D62976" Offset="0.3"/>
+                            <GradientStop Color="#7F7FD5" Offset="0.62"/>
+                            <GradientStop Color="#38F9D7" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
+                <StackPanel x:Name="Orbs" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0" IsHitTestVisible="False" Margin="0,0,0,2"/>
+            </Grid>
+        </Border>
+
+        <!-- The peek: an agent leaning in with one suggestion -->
+        <Border x:Name="PeekCard" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,50,0,0" Visibility="Collapsed"
+                Background="{StaticResource Glass}" BorderThickness="1" CornerRadius="23" Padding="7,6,8,6" Cursor="Hand"
+                MouseLeftButtonUp="Peek_Click" MouseEnter="Peek_Enter" MouseLeave="Peek_Leave">
+            <Border.RenderTransform><TranslateTransform x:Name="PeekShift" Y="-26"/></Border.RenderTransform>
+            <StackPanel Orientation="Horizontal">
+                <c:AgentOrb x:Name="PeekOrb" Width="32" Height="32"/>
+                <StackPanel Margin="10,0,6,0" VerticalAlignment="Center" MaxWidth="300">
+                    <TextBlock x:Name="PeekName" FontSize="10.5" FontWeight="SemiBold" Foreground="{StaticResource Muted}"/>
+                    <TextBlock x:Name="PeekText" FontSize="13" TextTrimming="CharacterEllipsis" Margin="0,-1,0,0"/>
+                </StackPanel>
+                <StackPanel x:Name="PeekActions" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                <Button Style="{StaticResource IconBtn}" Content="&#xE711;" FontSize="9" Width="22" Height="22" Click="Peek_Close" ToolTip="Not now" VerticalAlignment="Center" Margin="2,0,0,0"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

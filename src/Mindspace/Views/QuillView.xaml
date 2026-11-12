@@ -1,0 +1,74 @@
+<UserControl x:Class="Mindspace.Views.QuillView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mindspace.Controls">
+    <StackPanel Margin="18,2,18,14">
+
+        <!-- copied text the draft should respond to -->
+        <Border x:Name="CtxChip" Style="{StaticResource Card}" Padding="11,7,6,7" CornerRadius="13" Margin="0,0,0,8" Visibility="Collapsed">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Style="{StaticResource IconBtn}" Content="&#xE711;" FontSize="9" Width="22" Height="22" Click="CtxRemove_Click" ToolTip="Don't use the copied text"/>
+                <TextBlock Text="&#xE77F;" Style="{StaticResource Icon}" Margin="0,0,8,0"/>
+                <TextBlock x:Name="CtxText" FontSize="12" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+
+        <Border Style="{StaticResource Card}" Padding="14,10,8,10">
+            <DockPanel>
+                <Button x:Name="SendBtn" DockPanel.Dock="Right" Width="32" Height="32" VerticalAlignment="Bottom" Click="Send_Click" Cursor="Hand" ToolTip="Draft it (Enter)" FocusVisualStyle="{x:Null}">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Grid>
+                                <Ellipse x:Name="e" Fill="{TemplateBinding Background}"/>
+                                <TextBlock x:Name="g" Text="{TemplateBinding Content}" FontFamily="{StaticResource Icons}" FontSize="13" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="e" Property="Opacity" Value="0.85"/></Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+                <TextBox x:Name="Ask" Style="{StaticResource Input}" Tag="What do you want to say?" MaxHeight="96" VerticalAlignment="Center"
+                         AcceptsReturn="False" PreviewKeyDown="Ask_KeyDown" Margin="0,0,8,0"/>
+            </DockPanel>
+        </Border>
+
+        <WrapPanel x:Name="Tones" Margin="0,9,0,0"/>
+
+        <WrapPanel x:Name="Starters" Margin="0,2,0,0"/>
+
+        <Border x:Name="OutCard" Style="{StaticResource Card}" Margin="0,6,0,0" Padding="14,12,6,12" Visibility="Collapsed">
+            <ScrollViewer x:Name="OutScroll" MaxHeight="290" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+                <TextBox x:Name="Out" Style="{StaticResource Input}" AcceptsReturn="True" FontSize="13.5" Tag=""/>
+            </ScrollViewer>
+        </Border>
+        <TextBlock x:Name="Err" Foreground="{StaticResource Danger}" TextWrapping="Wrap" FontSize="12" Margin="2,8,0,0" Visibility="Collapsed"/>
+
+        <WrapPanel x:Name="Actions" Margin="0,10,0,-6" Visibility="Collapsed">
+            <Button x:Name="InsertBtn" Style="{StaticResource Primary}" Click="Insert_Click" Margin="0,0,6,6">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE8A1;" FontFamily="{StaticResource Icons}" Foreground="White" FontSize="12" VerticalAlignment="Center" Margin="0,1,7,0"/>
+                    <TextBlock x:Name="InsertLabel" Text="Insert" Foreground="White" FontWeight="SemiBold" FontSize="12.5"/>
+                </StackPanel>
+            </Button>
+            <Button Style="{StaticResource Chip}" Content="Copy" Click="Copy_Click" x:Name="CopyBtn"/>
+            <Button Style="{StaticResource Chip}" Content="Shorter" Tag="Make it noticeably shorter." Click="Refine_Click"/>
+            <Button Style="{StaticResource Chip}" Content="Warmer" Tag="Make it warmer and friendlier." Click="Refine_Click"/>
+            <Button Style="{StaticResource Chip}" Content="Formal" Tag="Make it more formal and professional." Click="Refine_Click"/>
+            <Button Style="{StaticResource Chip}" ToolTip="Try again" Click="Retry_Click"><TextBlock Text="&#xE72C;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,2,0,1"/></Button>
+        </WrapPanel>
+
+        <!-- Tick leaning in: the draft contains a promise -->
+        <Border x:Name="TickBar" Margin="0,12,0,0" Padding="8,7,8,7" CornerRadius="14" Background="#1238F9D7" BorderBrush="#4038F9D7" BorderThickness="1" Visibility="Collapsed">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Style="{StaticResource IconBtn}" Content="&#xE711;" FontSize="9" Width="22" Height="22" Click="TickDismiss_Click"/>
+                <Button x:Name="TickAdd" DockPanel.Dock="Right" Style="{StaticResource Chip}" Content="Remind me" Margin="6,0,2,0" Click="TickAdd_Click"/>
+                <c:AgentOrb x:Name="TickOrb" Width="28" Height="28" Margin="2,0,0,0"/>
+                <StackPanel VerticalAlignment="Center" Margin="10,0,0,0">
+                    <TextBlock x:Name="TickText" FontSize="12.5" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="TickWhen" FontSize="11" Foreground="#38F9D7" Margin="0,0,0,1"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

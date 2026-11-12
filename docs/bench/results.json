@@ -1,0 +1,281 @@
+[
+  {
+    "model": "qwen3.5:0.8b",
+    "coldLoadMs": 47179,
+    "vramGb": 0.52,
+    "onGpuPct": 100,
+    "tasks": {
+      "email": {
+        "ttftMs": 118,
+        "totalMs": 1174,
+        "tokens": 135,
+        "tps": 127.8,
+        "words": 104
+      },
+      "reply": {
+        "ttftMs": 74,
+        "totalMs": 374,
+        "tokens": 43,
+        "tps": 142.9,
+        "words": 27
+      },
+      "explain": {
+        "ttftMs": 83,
+        "totalMs": 1034,
+        "tokens": 119,
+        "tps": 125.2,
+        "words": 101
+      },
+      "diagnose": {
+        "ttftMs": 93,
+        "totalMs": 790,
+        "tokens": 77,
+        "tps": 110.5,
+        "words": 57
+      }
+    },
+    "reminderAccuracy": "2/8",
+    "reminderAvgMs": 307,
+    "reminderMisses": [
+      "submit the expense report by friday 5pm → { \"title\": \"Submit expense report\", \"due\": \"2026-11-20T17:00\" }",
+      "pick up dry cleaning on saturday morning → { \"title\": \"Pick up dry cleaning\", \"due\": \"2026-11-14\" }",
+      "email Priya the slides in two hours → { \"title\": \"Email Priya\", \"due\": \"2026-11-17T14:30\" }",
+      "book flights for the conference → { \"title\": \"Book flights\", \"due\": \"2026-11-17T14:30\" }",
+      "dinner with Sam the day after tomorrow, 7:30 in the evening → { \"title\": \"Dinner\", \"due\": \"2026-11-18T19:30\" }",
+      "take the bins out tonight → { \"title\": \"Take bins out\", \"due\": \"2026-11-18T14:30\" }"
+    ],
+    "avgTps": 126.6,
+    "avgTtftMs": 92
+  },
+  {
+    "model": "gemma3:1b",
+    "coldLoadMs": 2943,
+    "vramGb": 0.82,
+    "onGpuPct": 100,
+    "tasks": {
+      "email": {
+        "ttftMs": 77,
+        "totalMs": 429,
+        "tokens": 55,
+        "tps": 156.7,
+        "words": 37
+      },
+      "reply": {
+        "ttftMs": 55,
+        "totalMs": 205,
+        "tokens": 25,
+        "tps": 166,
+        "words": 17
+      },
+      "explain": {
+        "ttftMs": 62,
+        "totalMs": 1726,
+        "tokens": 258,
+        "tps": 155.1,
+        "words": 194
+      },
+      "diagnose": {
+        "ttftMs": 82,
+        "totalMs": 753,
+        "tokens": 101,
+        "tps": 150.6,
+        "words": 58
+      }
+    },
+    "reminderAccuracy": "2/8",
+    "reminderAvgMs": 271,
+    "reminderMisses": [
+      "submit the expense report by friday 5pm → {\"title\": \"submit expense report\", \"due\": \"2026-11-20T17:00\"}",
+      "pick up dry cleaning on saturday morning → {\"title\": \"pick up dry cleaning\", \"due\": \"2026-11-20T09:00\"}",
+      "email Priya the slides in two hours → {\"title\": \"emails\", \"due\": \"2026-11-11T14:30\"}",
+      "book flights for the conference → {\"title\": \"Book Flights\", \"due\": \"2026-11-11T14:30\"}",
+      "dinner with Sam the day after tomorrow, 7:30 in the evening → {\"title\": \"dinner\", \"due\": \"2026-11-19T19:30\"}",
+      "take the bins out tonight → {\"title\": \"Take the bins out\", \"due\": \"2026-11-11T14:30\"}"
+    ],
+    "avgTps": 157.1,
+    "avgTtftMs": 69
+  },
+  {
+    "model": "qwen3.5:2b",
+    "coldLoadMs": 4528,
+    "vramGb": 2.19,
+    "onGpuPct": 100,
+    "tasks": {
+      "email": {
+        "ttftMs": 89,
+        "totalMs": 1373,
+        "tokens": 99,
+        "tps": 77.1,
+        "words": 75
+      },
+      "reply": {
+        "ttftMs": 81,
+        "totalMs": 680,
+        "tokens": 47,
+        "tps": 78.6,
+        "words": 33
+      },
+      "explain": {
+        "ttftMs": 83,
+        "totalMs": 2818,
+        "tokens": 220,
+        "tps": 80.5,
+        "words": 171
+      },
+      "diagnose": {
+        "ttftMs": 100,
+        "totalMs": 885,
+        "tokens": 60,
+        "tps": 76.4,
+        "words": 48
+      }
+    },
+    "reminderAccuracy": "4/8",
+    "reminderAvgMs": 479,
+    "reminderMisses": [
+      "submit the expense report by friday 5pm → {\"title\": \"Submit Expense Report\", \"due\": \"2026-11-20T17:00\"}",
+      "book flights for the conference → {\"title\": \"Book Conference Flights\", \"due\": \"2026-11-18T14:30\"}",
+      "dinner with Sam the day after tomorrow, 7:30 in the evening → {\"title\": \"Dinner with Sam\", \"due\": \"2026-11-14T19:30\"}",
+      "take the bins out tonight → {\"title\": \"Take bins out\", \"due\": \"2026-11-11T14:30\"}"
+    ],
+    "avgTps": 78.1,
+    "avgTtftMs": 88
+  },
+  {
+    "model": "granite4:micro",
+    "coldLoadMs": 11051,
+    "vramGb": 2.33,
+    "onGpuPct": 100,
+    "tasks": {
+      "email": {
+        "ttftMs": 75,
+        "totalMs": 657,
+        "tokens": 45,
+        "tps": 77.3,
+        "words": 34
+      },
+      "reply": {
+        "ttftMs": 50,
+        "totalMs": 580,
+        "tokens": 41,
+        "tps": 77.4,
+        "words": 25
+      },
+      "explain": {
+        "ttftMs": 64,
+        "totalMs": 1736,
+        "tokens": 127,
+        "tps": 76,
+        "words": 101
+      },
+      "diagnose": {
+        "ttftMs": 115,
+        "totalMs": 891,
+        "tokens": 58,
+        "tps": 74.9,
+        "words": 32
+      }
+    },
+    "reminderAccuracy": "3/8",
+    "reminderAvgMs": 374,
+    "reminderMisses": [
+      "submit the expense report by friday 5pm → {\"title\": \"submit the expense report\", \"due\": \"2026-11-20T17:00\"}",
+      "pick up dry cleaning on saturday morning → {\"title\": \"Pick up dry cleaning\", \"due\": \"2026-11-13T00:00\"}",
+      "book flights for the conference → {\"title\": \"book flights for conference\", \"due\": \"2026-11-18T14:30\"}",
+      "dinner with Sam the day after tomorrow, 7:30 in the evening → {\"title\": \"dinner with Sam\", \"due\": \"2026-11-19T19:30\"}",
+      "take the bins out tonight → {\"title\": \"take the bins out\", \"due\": \"2026-11-18T14:30\"}"
+    ],
+    "avgTps": 76.4,
+    "avgTtftMs": 76
+  },
+  {
+    "model": "llama3.2:3b",
+    "coldLoadMs": 10351,
+    "vramGb": 2.38,
+    "onGpuPct": 100,
+    "tasks": {
+      "email": {
+        "ttftMs": 68,
+        "totalMs": 802,
+        "tokens": 64,
+        "tps": 87.1,
+        "words": 52
+      },
+      "reply": {
+        "ttftMs": 52,
+        "totalMs": 558,
+        "tokens": 45,
+        "tps": 88.9,
+        "words": 31
+      },
+      "explain": {
+        "ttftMs": 46,
+        "totalMs": 2679,
+        "tokens": 207,
+        "tps": 78.6,
+        "words": 168
+      },
+      "diagnose": {
+        "ttftMs": 112,
+        "totalMs": 1578,
+        "tokens": 92,
+        "tps": 62.8,
+        "words": 74
+      }
+    },
+    "reminderAccuracy": "4/8",
+    "reminderAvgMs": 318,
+    "reminderMisses": [
+      "submit the expense report by friday 5pm → {\"title\": \"Submit\", \"due\": \"2026-11-20T17:00\"}",
+      "email Priya the slides in two hours → {\"title\": \"Send slides to Priya\", \"due\": \"2026-11-11T16:00\"}",
+      "book flights for the conference → {\"title\": \"book flights\", \"due\": \"2026-11-18T14:30\"}",
+      "dinner with Sam the day after tomorrow, 7:30 in the evening → {\"title\": \"Plan dinner with Sam\", \"due\": \"2026-11-19T19:30\"}"
+    ],
+    "avgTps": 79.4,
+    "avgTtftMs": 69
+  },
+  {
+    "model": "qwen3.5:4b",
+    "coldLoadMs": 6795,
+    "vramGb": 2.91,
+    "onGpuPct": 100,
+    "tasks": {
+      "email": {
+        "ttftMs": 193,
+        "totalMs": 2768,
+        "tokens": 113,
+        "tps": 43.9,
+        "words": 84
+      },
+      "reply": {
+        "ttftMs": 199,
+        "totalMs": 1483,
+        "tokens": 56,
+        "tps": 43.6,
+        "words": 41
+      },
+      "explain": {
+        "ttftMs": 176,
+        "totalMs": 4228,
+        "tokens": 178,
+        "tps": 43.9,
+        "words": 152
+      },
+      "diagnose": {
+        "ttftMs": 290,
+        "totalMs": 1922,
+        "tokens": 70,
+        "tps": 42.9,
+        "words": 52
+      }
+    },
+    "reminderAccuracy": "6/8",
+    "reminderAvgMs": 871,
+    "reminderMisses": [
+      "submit the expense report by friday 5pm → {\"title\": \"Submit expense report\", \"due\": \"2026-11-20T17:00\"}",
+      "pick up dry cleaning on saturday morning → {\"title\": \"Pick up dry cleaning\", \"due\": \"2026-11-14T00:00\"}"
+    ],
+    "avgTps": 43.6,
+    "avgTtftMs": 215
+  }
+]
