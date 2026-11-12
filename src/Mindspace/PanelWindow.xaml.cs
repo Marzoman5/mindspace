@@ -54,8 +54,8 @@ public partial class PanelWindow : Window
     public void Open(string? id = null, string? intent = null, bool autoRun = false)
     {
         Show(string.IsNullOrEmpty(id) ? _current : id, intent, autoRun);
-        if (IsOpen) { Activate(); return; }
-        IsOpen = true; _closing = false;
+        if (IsOpen && !_closing) { Activate(); return; }
+        IsOpen = true; _closing = false;   // also rescues a panel that was mid-fade-out
         App.Mind.Halo.SetPanelOpen(true);
         Show();
         Activate();
@@ -200,25 +200,22 @@ public partial class PanelWindow : Window
 
     /// <summary>
     /// Pastes text into the app the user was in before opening Mindspace. Only reachable from the Insert button.
-    /// The previous clipboard text is put back afterwards.
+    /// Works like Copy followed by Ctrl+V in that app.
     /// </summary>
     public async void InsertText(string text)
     {
         var target = App.Mind.Sensor.LastExternalWindow;
-        string? previous = null;
-        try { if (Clipboard.ContainsText()) previous = Clipboard.GetText(); } catch { }
         try { Clipboard.SetText(text); } catch { return; }
         Dismiss();
         if (target == 0 || !Native.IsWindow(target)) return;   // nothing to paste into: text stays on the clipboard
+        if (Native.IsTerminal(target)) return;                 // never type model-written text into a shell; it stays on the clipboard
         await Task.Delay(180);
         Native.SetForegroundWindow(target);
         await Task.Delay(140);
         if (Native.GetForegroundWindow() != target) return;    // focus didn't land where expected: don't type anywhere else
         Native.SendPaste();
-        if (previous != null)
-        {
-            await Task.Delay(900);
-            try { Clipboard.SetText(previous); } catch { }
-        }
+        // The draft deliberately stays on the clipboard afterwards, exactly as if the user had pressed Copy:
+        // if the paste was blocked (e.g. an elevated window) they can still Ctrl+V it, and we never rewrite
+        // clipboard contents we did not create.
     }
 }

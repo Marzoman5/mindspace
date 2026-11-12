@@ -43,7 +43,9 @@ public sealed class ReminderStore
         try
         {
             Directory.CreateDirectory(Settings.Dir);
-            System.IO.File.WriteAllText(File, JsonSerializer.Serialize(Items, new JsonSerializerOptions { WriteIndented = true }));
+            var tmp = File + ".tmp";   // write-then-rename, so a crash mid-save can't leave a half-written list
+            System.IO.File.WriteAllText(tmp, JsonSerializer.Serialize(Items, new JsonSerializerOptions { WriteIndented = true }));
+            System.IO.File.Move(tmp, File, true);
         }
         catch { }
         Changed?.Invoke();
@@ -74,16 +76,31 @@ public static partial class WhenParser
     static readonly string[] Days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
     static readonly string[] Months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
-    [GeneratedRegex(@"\b(?:in|after)\s+(an?|half an?|\d+(?:\.\d+)?)\s*(min(?:ute)?s?|h(?:ou)?rs?|days?|weeks?)\b", RegexOptions.IgnoreCase)] private static partial Regex RelRx();
+    const string Num = @"(?<n>an?|half an?|a couple of|a few|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|forty five|forty-five|\d+(?:\.\d+)?)";
+    const string Unit = @"(?<u>min(?:ute)?s?|h(?:ou)?rs?|days?|weeks?)";
+    [GeneratedRegex(@"\b(?:in|after)\s+" + Num + @"\s*" + Unit + @"\b|\b" + Num + @"\s*" + Unit + @"\s+from\s+(?:now|today)\b", RegexOptions.IgnoreCase | RegexOptions.ExplicitCapture)] private static partial Regex RelRx();
+    static double Number(string q) => q switch
+    {
+        "a" or "an" or "one" => 1, "half a" or "half an" => 0.5, "a couple of" or "two" => 2, "a few" or "three" => 3, "four" => 4, "five" => 5, "six" => 6,
+        "seven" => 7, "eight" => 8, "nine" => 9, "ten" => 10, "fifteen" => 15, "twenty" => 20, "thirty" => 30, "forty five" or "forty-five" => 45,
+        _ => double.Parse(q, CultureInfo.InvariantCulture),
+    };
     [GeneratedRegex(@"\b(?:at|by|@|around)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?!\s*(?:min|hour|day|week|%))\b|\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\b(\d{1,2}):(\d{2})\b", RegexOptions.IgnoreCase)] private static partial Regex TimeRx();
     [GeneratedRegex(@"\b(?:on\s+|by\s+|this\s+|next\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday|sun|mon|tues?|wed|thurs?|fri|sat)\b", RegexOptions.IgnoreCase)] private static partial Regex DayRx();
     [GeneratedRegex(@"\b(?:on\s+|by\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b", RegexOptions.IgnoreCase)] private static partial Regex MonthRx();
-    [GeneratedRegex(@"\b(day after tomorrow|tomorrow|tmrw|today|tonight|next week|this weekend|end of (?:the )?day|eod)\b", RegexOptions.IgnoreCase)] private static partial Regex WordRx();
+    [GeneratedRegex(@"\b(?:the\s+)?(day after tomorrow|tomorrow|tmrw|today|tonight|next week|this weekend|end of (?:the )?day|eod)\b", RegexOptions.IgnoreCase)] private static partial Regex WordRx();
     [GeneratedRegex(@"\b(?:in the |this |by )?(morning|noon|afternoon|evening|midnight)\b", RegexOptions.IgnoreCase)] private static partial Regex PartRx();
     [GeneratedRegex(@"^\s*(?:hey\s+\w+,?\s+)?(?:please\s+)?(?:remind me (?:to|about|that)|remember to|don'?t forget to|i (?:need|have|want) to|i(?:'ll| will| should| must|'m going to| am going to| gotta)|let me|todo:?|to-do:?)\s+", RegexOptions.IgnoreCase)] private static partial Regex LeadRx();
     [GeneratedRegex(@"\s{2,}")] private static partial Regex SpacesRx();
 
+    /// <summary>Never throws: absurd input ("in 99999999999 days") just comes back as a reminder with no time.</summary>
     public static Result Parse(string text, DateTime? nowOverride = null)
+    {
+        try { return ParseCore(text, nowOverride); }
+        catch { return new Result(CleanTitle(text), null, false); }
+    }
+
+    static Result ParseCore(string text, DateTime? nowOverride)
     {
         var now = nowOverride ?? DateTime.Now;
         string t = text.Trim();
@@ -91,14 +108,15 @@ public static partial class WhenParser
 
         t = Cut(RelRx(), t, m =>
         {
-            var q = m.Groups[1].Value.ToLowerInvariant();
-            double n = q.StartsWith("half") ? 0.5 : q is "a" or "an" ? 1 : double.Parse(q, CultureInfo.InvariantCulture);
-            var u = m.Groups[2].Value.ToLowerInvariant();
-            absolute = u[0] switch { 'm' => now.AddMinutes(n), 'h' => now.AddHours(n), 'd' => now.AddDays(n), _ => now.AddDays(7 * n) };
+            double n = Number(Regex.Replace(m.Groups["n"].Value.ToLowerInvariant(), @"\s+", " "));
+            if (n > 5000) return;
+            var u = m.Groups["u"].Value.ToLowerInvariant();
+            if (u[0] is 'd' or 'w') { date = now.Date.AddDays(u[0] == 'd' ? n : 7 * n); if (!m.Value.Contains("from", StringComparison.OrdinalIgnoreCase)) time ??= now.TimeOfDay; }
+            else absolute = u[0] == 'm' ? now.AddMinutes(n) : now.AddHours(n);
         });
         t = Cut(WordRx(), t, m =>
         {
-            switch (m.Value.ToLowerInvariant())
+            switch (m.Groups[1].Value.ToLowerInvariant())
             {
                 case "today": date = now.Date; break;
                 case "tonight": date = now.Date; time ??= TimeSpan.FromHours(20); break;
@@ -208,7 +226,7 @@ public static partial class Commitments
 {
     [GeneratedRegex(@"(?<![\w'])(?:I(?:'|’)ll|I will|I(?:'|’)m going to|I am going to|I need to|I have to|I(?:'|’)ve got to|I should|I must|let me|remind me to|don(?:'|’)?t forget to|we need to|we should|we(?:'|’)ll)\s+(?!be\s+(?:happy|glad|honest|there|around|available|in touch\b))([a-z][^.!?\n;]{3,90})", RegexOptions.IgnoreCase)]
     private static partial Regex Rx();
-    [GeneratedRegex(@"^(?:be able to|try to|make sure to|go ahead and|also|just|definitely|probably)\s+", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^(?:(?:be able to|try to|make sure to|go ahead and|need to|have to|also|just|definitely|probably|still)\s+)+", RegexOptions.IgnoreCase)]
     private static partial Regex FillerRx();
     static readonly string[] Skip = ["let you know", "see you", "talk to you", "keep you posted", "look forward", "be in touch", "get back to you if", "be honest"];
 
@@ -219,7 +237,9 @@ public static partial class Commitments
         foreach (Match m in Rx().Matches(text))
         {
             var phrase = FillerRx().Replace(m.Groups[1].Value.Trim(), "");
-            if (Skip.Any(s => phrase.Contains(s, StringComparison.OrdinalIgnoreCase))) continue;
+            if (Skip.Any(s => phrase.StartsWith(s, StringComparison.OrdinalIgnoreCase))) continue;
+            // "follow up with legal next week and let you know" → keep the task, drop the trailing courtesy
+            phrase = Regex.Replace(phrase, @"[,\s]+(?:and|then|so)\s+(?:let|keep|get back|i(?:'|’)ll|i will|we(?:'|’)ll|we can|you)\b.*$", "", RegexOptions.IgnoreCase);
             var r = WhenParser.Parse(phrase);
             if (r.Title.Length < 4 || r.Title.Split(' ').Length < 2) continue;
             if (r.FoundTime) return r;            // a commitment with a deadline is the strongest signal

@@ -48,10 +48,17 @@ public static class Gen
         {
             if (!Clipboard.ContainsText()) return "";
             var t = Clipboard.GetText().Trim();
-            return t.Length is > 0 and var n && n <= max ? t : "";
+            return t.Length <= max ? t : t[..max];
         }
         catch { return ""; }
     }
+
+    /// <summary>
+    /// Wraps untrusted text (clipboard, selection) as data for the model. The closing tag is defanged so the
+    /// text cannot step outside its data section and pose as instructions.
+    /// </summary>
+    public static string AsContext(string text) =>
+        "<context>\n" + System.Text.RegularExpressions.Regex.Replace(text, @"<\s*/?\s*context", "<​context", System.Text.RegularExpressions.RegexOptions.IgnoreCase) + "\n</context>";
 
     public static string OneLine(string s, int max) => ContextSensor.Shorten(System.Text.RegularExpressions.Regex.Replace(s, @"\s+", " ").Trim(), max);
 }

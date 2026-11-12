@@ -18,7 +18,7 @@ public partial class HaloWindow : Window
     readonly DispatcherTimer _peekTimer = new();
     Suggestion? _peek;
     bool _expanded;
-    const int HotkeyId = 0x4D53;
+    const int HotkeyId = 0x4D53, HotkeyExplain = 0x4D54, HotkeyWrite = 0x4D55;
     static readonly IEasingFunction Ease = new CubicEase { EasingMode = EasingMode.EaseOut };
     static readonly IEasingFunction Spring = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.35 };
 
@@ -41,7 +41,15 @@ public partial class HaloWindow : Window
             Orbs.Children.Add(orb);
         }
 
-        _intent.Tick += (_, _) => { _intent.Stop(); if (Island.IsMouseOver) Expand(); };
+        _intent.Tick += (_, _) =>
+        {
+            _intent.Stop();
+            if (!Island.IsMouseOver) return;
+            Expand();
+            // Reaching for the island is a strong hint a question is coming: start loading the model now,
+            // so it is in memory by the time the user has typed their first words.
+            _ = App.Mind.Ollama.WarmAsync(App.Mind.Settings.ExplainerModel);
+        };
         _collapse.Tick += (_, _) => { _collapse.Stop(); if (!Island.IsMouseOver) Collapse(); };
         _peekTimer.Tick += (_, _) => HidePeek();
 
@@ -52,20 +60,60 @@ public partial class HaloWindow : Window
             src?.AddHook(WndProc);
             // Ctrl+Alt+Space; if another app owns it we simply go without (the island still works).
             Native.RegisterHotKey(Native.Handle(this), HotkeyId, Native.MOD_CONTROL | Native.MOD_ALT | Native.MOD_NOREPEAT, 0x20);
+            // Alt+Shift+E / Alt+Shift+W: act on the text currently selected in any app (not Ctrl+Alt: that is AltGr on many keyboards).
+            Native.RegisterHotKey(Native.Handle(this), HotkeyExplain, Native.MOD_ALT | Native.MOD_SHIFT | Native.MOD_NOREPEAT, 0x45);
+            Native.RegisterHotKey(Native.Handle(this), HotkeyWrite, Native.MOD_ALT | Native.MOD_SHIFT | Native.MOD_NOREPEAT, 0x57);
             Native.AddClipboardFormatListener(Native.Handle(this));
         };
-        Closed += (_, _) => { Native.UnregisterHotKey(Native.Handle(this), HotkeyId); Native.RemoveClipboardFormatListener(Native.Handle(this)); };
+        Closed += (_, _) => { foreach (var id in new[] { HotkeyId, HotkeyExplain, HotkeyWrite }) Native.UnregisterHotKey(Native.Handle(this), id); Native.RemoveClipboardFormatListener(Native.Handle(this)); };
     }
 
     nint WndProc(nint hwnd, int msg, nint wParam, nint lParam, ref bool handled)
     {
         if (msg == Native.WM_HOTKEY && wParam == HotkeyId) { App.Mind.Panel.Toggle(); handled = true; }
+        else if (msg == Native.WM_HOTKEY && (wParam == HotkeyExplain || wParam == HotkeyWrite)) { _ = UseSelectionAsync(wParam == HotkeyExplain ? "sage" : "quill"); handled = true; }
         else if (msg == Native.WM_CLIPBOARDUPDATE && App.Mind.Settings.ClipboardSensing)
         {
             // Opt-in only. Text is examined by a local regex and dropped; see ContextSensor.
-            try { if (Clipboard.ContainsText()) App.Mind.Sensor.OnClipboardText(Clipboard.GetText()); } catch { }
+            // Deferred off the message pump (a busy clipboard must not stall the UI) and skipped for our own copies.
+            Dispatcher.BeginInvoke(() =>
+            {
+                try
+                {
+                    if (Native.ProcessName(Native.GetForegroundWindow()) == "Mindspace") return;
+                    if (Clipboard.ContainsText()) App.Mind.Sensor.OnClipboardText(Clipboard.GetText());
+                }
+                catch { }
+            }, DispatcherPriority.Background);
         }
         return 0;
+    }
+
+    bool _grabbing;
+    /// <summary>
+    /// The user pressed a "use my selection" hotkey: copy the selection exactly as Ctrl+C would
+    /// (so it is on their clipboard, visibly, like any copy) and hand it to the agent.
+    /// </summary>
+    async Task UseSelectionAsync(string agent)
+    {
+        if (_grabbing) return;
+        _grabbing = true;
+        try
+        {
+            var fg = Native.GetForegroundWindow();
+            // No synthetic Ctrl+C into private windows, or into terminals (where Ctrl+C means "interrupt").
+            if (ContextSensor.IsPrivate(Native.WindowTitle(fg)) || Native.IsTerminal(fg)) { App.Mind.Panel.Open(agent); return; }
+            for (int i = 0; i < 40 && Native.ModifiersDown(); i++) await Task.Delay(25);   // let go of Alt+Shift first
+            // Re-check after the wait: the user must still be in the same window, with no modifier held.
+            if (Native.ModifiersDown() || Native.GetForegroundWindow() != fg) { App.Mind.Panel.Open(agent); return; }
+            uint before = Native.GetClipboardSequenceNumber();
+            Native.SendCopy();
+            for (int i = 0; i < 12 && Native.GetClipboardSequenceNumber() == before; i++) await Task.Delay(25);
+            bool copied = Native.GetClipboardSequenceNumber() != before;
+            if (agent == "sage" && copied) App.Mind.Panel.Open("sage", "@selection", autoRun: true);
+            else App.Mind.Panel.Open(agent);
+        }
+        finally { _grabbing = false; }
     }
 
     static void Lift(UIElement e, double to)
@@ -90,6 +138,7 @@ public partial class HaloWindow : Window
         Animate(Island, WidthProperty, 172, 260, Spring);
         Animate(Island, HeightProperty, 42, 260, Spring);
         Animate(Spark, OpacityProperty, 0, 120);
+        Orbs.Visibility = Visibility.Visible;
         Animate(Orbs, OpacityProperty, 1, 220);
         Orbs.IsHitTestVisible = true;
     }
@@ -102,6 +151,7 @@ public partial class HaloWindow : Window
         Animate(Island, HeightProperty, 9, 220, Ease);
         Animate(Spark, OpacityProperty, 1, 260);
         Animate(Orbs, OpacityProperty, 0, 100);
+        Orbs.Visibility = Visibility.Hidden;   // hidden orbs stop blinking: nothing animates while the island is idle
         Orbs.IsHitTestVisible = false;
     }
 

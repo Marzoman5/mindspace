@@ -64,10 +64,11 @@ public sealed class SystemMonitor
         await Task.Run(async () =>
         {
             var first = Sample();
-            Native.CpuPercent();
+            var (idle0, busy0) = Native.CpuTimes();             // own baseline: never disturbs the heartbeat's
             await Task.Delay(700, ct);
             var second = Sample();
-            s.Cpu = Native.CpuPercent();
+            var (idle1, busy1) = Native.CpuTimes();
+            s.Cpu = busy1 > busy0 ? Math.Clamp(100.0 * ((busy1 - busy0) - (idle1 - idle0)) / (busy1 - busy0), 0, 100) : 0;
             double interval = 0.7 * Environment.ProcessorCount * 1000;
             var groups = second.Values.GroupBy(p => p.name).Select(g =>
             {
@@ -118,9 +119,18 @@ public sealed class SystemMonitor
     public static async Task<(string name, int load, double usedGb, double totalGb, int temp)?> QueryGpuAsync(CancellationToken ct = default)
     {
         if (NvidiaSmi == null) return null;
+        return await Task.Run(() => QueryGpuCore(ct), ct);   // process start stays off the UI thread
+    }
+
+    static async Task<(string name, int load, double usedGb, double totalGb, int temp)?> QueryGpuCore(CancellationToken outer)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(outer);
+        timeout.CancelAfter(TimeSpan.FromSeconds(4));          // a hung driver tool must not wedge Patch
+        var ct = timeout.Token;
+        Process? p = null;
         try
         {
-            using var p = Process.Start(new ProcessStartInfo(NvidiaSmi, "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits")
+            p = Process.Start(new ProcessStartInfo(NvidiaSmi!, "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits")
             { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true });
             if (p == null) return null;
             var line = await p.StandardOutput.ReadLineAsync(ct);
@@ -129,6 +139,7 @@ public sealed class SystemMonitor
             if (f == null || f.Length < 5) return null;
             return (f[0].Replace("NVIDIA ", "").Replace("GeForce ", ""), int.Parse(f[1]), double.Parse(f[2]) / 1024, double.Parse(f[3]) / 1024, int.Parse(f[4]));
         }
-        catch { return null; }
+        catch { try { if (p is { HasExited: false }) p.Kill(); } catch { } return null; }
+        finally { p?.Dispose(); }
     }
 }

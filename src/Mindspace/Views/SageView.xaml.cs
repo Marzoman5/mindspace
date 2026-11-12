@@ -12,6 +12,7 @@ public partial class SageView : UserControl, IAgentView
     readonly List<ChatMsg> _history = [];
     CancellationTokenSource? _cts;
     string _clip = "";
+    int _epoch;
     static readonly string[] Ideas = ["How does compound interest work?", "What is an API, simply?", "Why is the sky blue?"];
 
     public SageView()
@@ -26,6 +27,12 @@ public partial class SageView : UserControl, IAgentView
         _clip = Gen.ClipboardText(4000);
         if (ContextSensor.IsPrivate(_clip)) _clip = "";
         if (_cts == null) ShowChips(_history.Count == 0 ? "start" : "follow");
+        if (intent == "@selection")
+        {
+            // Alt+Shift+E on selected text: explain it straight away.
+            intent = null; autoRun = false;
+            if (_clip.Length >= 2) _ = RunAsync("Explain this:\n" + Gen.AsContext(_clip), "Explain  “" + Gen.OneLine(_clip, 80) + "”");
+        }
         if (!string.IsNullOrEmpty(intent)) { Ask.Text = intent; Ask.CaretIndex = intent.Length; }
         Dispatcher.BeginInvoke(() => { Ask.Focus(); Keyboard.Focus(Ask); }, System.Windows.Threading.DispatcherPriority.Input);
         _ = App.Mind.Ollama.WarmAsync(App.Mind.Settings.ExplainerModel);
@@ -38,7 +45,7 @@ public partial class SageView : UserControl, IAgentView
         if (mode == "start")
         {
             if (_clip.Length >= 12)
-                AddChip("Explain what I copied  ·  “" + Gen.OneLine(_clip, 26) + "”", () => _ = RunAsync($"Explain this:\n<context>\n{_clip}\n</context>", "Explain what I copied"), true);
+                AddChip("Explain what I copied  ·  “" + Gen.OneLine(_clip, 26) + "”", () => _ = RunAsync("Explain this:\n" + Gen.AsContext(_clip), "Explain what I copied"), true);
             foreach (var idea in Ideas) AddChip(idea, () => _ = RunAsync(idea, idea));
         }
         else if (mode == "follow")
@@ -77,16 +84,18 @@ public partial class SageView : UserControl, IAgentView
     {
         _cts?.Cancel();
         var cts = _cts = new CancellationTokenSource();
+        int epoch = _epoch;
         Empty.Visibility = Visibility.Collapsed; Scroll.Visibility = Visibility.Visible; NewBtn.Visibility = Visibility.Visible;
         Chips.Children.Clear();
 
         // user bubble
-        Thread.Children.Add(new Border
+        var bubble = new Border
         {
             Background = (Brush)FindResource("SurfaceHi"), CornerRadius = new CornerRadius(15, 15, 4, 15), Padding = new Thickness(12, 7, 12, 8),
             HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(50, 6, 0, 10),
             Child = new TextBlock { Text = shown, TextWrapping = TextWrapping.Wrap, FontSize = 13.5 },
-        });
+        };
+        Thread.Children.Add(bubble);
         var answer = new Markdown { Margin = new Thickness(2, 0, 0, 10) };
         var dots = new TextBlock { Text = "thinking…", Foreground = (Brush)FindResource("Faint"), FontSize = 12, Margin = new Thickness(2, 0, 0, 10) };
         Thread.Children.Add(dots);
@@ -111,10 +120,19 @@ public partial class SageView : UserControl, IAgentView
             Scroll.ScrollToEnd();
             return;
         }
+        if (epoch != _epoch) return;                 // the conversation was cleared while this answer was streaming
         _history.Add(new("user", prompt));
         _history.Add(new("assistant", r.Text));
         if (_cts == null) ShowChips("follow");
-        Scroll.ScrollToEnd();
+        ScrollTo(bubble);
+    }
+
+    /// <summary>When an answer is complete, put its question at the top so the user reads from the start.</summary>
+    void ScrollTo(FrameworkElement el)
+    {
+        Scroll.UpdateLayout();
+        double y = el.TranslatePoint(new Point(0, 0), Thread).Y;
+        Scroll.ScrollToVerticalOffset(Math.Max(0, y - 2));
     }
 
     void SetBusy(bool busy)
@@ -126,6 +144,7 @@ public partial class SageView : UserControl, IAgentView
     void New_Click(object s, RoutedEventArgs e)
     {
         _cts?.Cancel(); _cts = null; SetBusy(false);
+        _epoch++;
         _history.Clear(); Thread.Children.Clear();
         Scroll.Visibility = Visibility.Collapsed; Empty.Visibility = Visibility.Visible; NewBtn.Visibility = Visibility.Collapsed;
         ShowChips("start");

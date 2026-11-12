@@ -40,6 +40,10 @@ public partial class App : Application
             return;
         }
 
+        // Software rendering: the UI is a few small translucent windows, so the CPU path is plenty, it keeps the
+        // discrete GPU asleep (battery) and its VRAM free for the model, and it avoids a ~100 MB Direct3D footprint.
+        if (!e.Args.Contains("--gpu-ui")) System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+
         DispatcherUnhandledException += (_, ex) => { Log(ex.Exception); ex.Handled = true; };
         AppDomain.CurrentDomain.ProcessExit += (_, _) => Native.SetTaskbarVisible(true);
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => { Native.SetTaskbarVisible(true); Log(ex.ExceptionObject as Exception); };
@@ -65,6 +69,7 @@ public partial class App : Application
         _heartbeat.Start();
         Monitor.Tick(false);
 
+        if (!Settings.Dock) Native.SetTaskbarVisible(true);   // self-heal if a previous run was killed while the dock was up
         ApplyDock();
         _ = ListenAsync(_life.Token);
         _ = Ollama.TryStartAsync();
@@ -109,7 +114,11 @@ public partial class App : Application
                 await pipe.WaitForConnectionAsync(ct);
                 using var reader = new StreamReader(pipe);
                 var buf = new char[2048];
-                int n = await reader.ReadAsync(buf.AsMemory(), ct);
+                using var readTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                readTimeout.CancelAfter(2000);     // a client that connects and says nothing can't block the channel
+                int n;
+                try { n = await reader.ReadAsync(buf.AsMemory(), readTimeout.Token); }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested) { continue; }
                 var line = new string(buf, 0, n).Trim();
                 if (line.Length > 0) await Dispatcher.InvokeAsync(() => Command(line));
             }
@@ -144,6 +153,10 @@ public partial class App : Application
             case "peek": Halo.Peek(new Suggestion(Agents.ById(arg1), rest.Length > 0 ? rest : Agents.ById(arg1).Tagline, arg1 switch { "quill" => "write", "patch" => "diagnose", _ => "explain" })); break;
             case "hover": Halo.DemoExpand(); break;
             case "quit": Quit(); break;
+#if DEBUG
+            // Debug builds only (never compiled into Release): lets the automated test press "Insert".
+            case "debug-insert": Panel.InsertText(arg1 + (rest.Length > 0 ? " " + rest : "")); break;
+#endif
         }
     }
 
@@ -152,6 +165,8 @@ public partial class App : Application
         try
         {
             Directory.CreateDirectory(Settings.Dir);
+            var log = new FileInfo(Path.Combine(Settings.Dir, "error.log"));
+            if (log.Exists && log.Length > 256 * 1024) log.Delete();    // never grows without bound
             File.AppendAllText(Path.Combine(Settings.Dir, "error.log"), $"{DateTime.Now:s} {ex}\n\n");
         }
         catch { }

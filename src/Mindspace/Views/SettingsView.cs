@@ -11,7 +11,8 @@ public sealed class SettingsView : UserControl, IAgentView
 {
     readonly StackPanel _root = new() { Margin = new Thickness(18, 2, 18, 14) };
     Settings S => App.Mind.Settings;
-    const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    int _pass;
+    const string RunKey =@"Software\Microsoft\Windows\CurrentVersion\Run";
 
     public SettingsView()
     {
@@ -37,7 +38,9 @@ public sealed class SettingsView : UserControl, IAgentView
         _root.Children.Add(new Border { Style = (Style)FindResource("Card"), Padding = new Thickness(12, 8, 12, 9), Child = name, Margin = new Thickness(0, 0, 0, 6) });
 
         Section("Models  ·  all run locally through Ollama");
+        int pass = ++_pass;
         var models = await App.Mind.Ollama.ModelsAsync();
+        if (pass != _pass) return;      // a newer Activate() is rebuilding the page
         Model(Agents.Quill, "writes", S.WriterModel, models, v => S.WriterModel = v);
         Model(Agents.Sage, "explains", S.ExplainerModel, models, v => S.ExplainerModel = v);
         Model(Agents.Tick, "reads odd dates", S.ReminderModel, models, v => S.ReminderModel = v);
@@ -129,6 +132,7 @@ public sealed class WelcomeView : UserControl, IAgentView
             {
                 TextWrapping = TextWrapping.Wrap, FontSize = 12, LineHeight = 18, Foreground = (Brush)FindResource("Muted"),
                 Text = "Hover the sliver at the top of the screen, or press Ctrl + Alt + Space.\n" +
+                       "Select text in any app, then Alt + Shift + E explains it and Alt + Shift + W drafts a reply.\n" +
                        "Nothing leaves this PC: the only connection is to the local model server. Agents write text; they can't run anything. " +
                        "Watching the clipboard and replacing the taskbar are off until you switch them on in Settings.",
             },

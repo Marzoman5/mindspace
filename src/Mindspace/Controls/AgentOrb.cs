@@ -36,8 +36,17 @@ public sealed class AgentOrb : FrameworkElement
     public AgentOrb()
     {
         Width = Height = 28;
-        IsVisibleChanged += (_, _) => { if (IsVisible) ScheduleBlink(); else BeginAnimation(BlinkProperty, null); };
+        // A plain timer decides when to blink; the animation clock only runs for the 160 ms of the blink itself.
+        // (A pending animation with a BeginTime would keep WPF's 60 fps render loop awake the whole time.)
+        _blinkTimer.Tick += (_, _) => { _blinkTimer.Interval = TimeSpan.FromSeconds(3 + Rng.NextDouble() * 5); if (IsVisible) BlinkOnce(); };
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible) { _blinkTimer.Interval = TimeSpan.FromSeconds(2 + Rng.NextDouble() * 4); _blinkTimer.Start(); }
+            else { _blinkTimer.Stop(); BeginAnimation(BlinkProperty, null); }
+        };
     }
+
+    readonly System.Windows.Threading.DispatcherTimer _blinkTimer = new(System.Windows.Threading.DispatcherPriority.Background);
 
     static Brush MakeShine()
     {
@@ -49,15 +58,13 @@ public sealed class AgentOrb : FrameworkElement
         return b;
     }
 
-    void ScheduleBlink()
+    void BlinkOnce()
     {
-        // one short blink every 3–7 s; only while visible, so idle cost is nil
-        var a = new DoubleAnimationUsingKeyFrames { BeginTime = TimeSpan.FromSeconds(2.5 + Rng.NextDouble() * 4.5) };
+        var a = new DoubleAnimationUsingKeyFrames { FillBehavior = FillBehavior.Stop };
         a.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.Zero)));
         a.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(70))));
         a.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(160))));
         Timeline.SetDesiredFrameRate(a, 30);
-        a.Completed += (_, _) => { if (IsVisible) ScheduleBlink(); };
         BeginAnimation(BlinkProperty, a);
     }
 

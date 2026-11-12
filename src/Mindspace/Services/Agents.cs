@@ -53,6 +53,8 @@ public static class Agents
         "Verdict: Healthy, Busy, or Needs attention — one short reason.\n" +
         "- 2 to 4 bullets, each naming a process or resource from the snapshot with its number, and whether that is normal.\n" +
         "Tip: one practical, safe suggestion.\n" +
+        "Scale: CPU under 40% is light, 40-80% busy, over 80% heavy. RAM under 75% is fine, over 90% is tight. A process using under 5% CPU is idle, not a load. " +
+        "'Mindspace' and 'ollama' are this assistant itself.\n" +
         "Only use facts from the snapshot; never invent processes or numbers. Never suggest registry edits, disabling security software, or downloading tools.";
 
     public const string TickSystem =

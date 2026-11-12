@@ -56,13 +56,22 @@ public partial class QuillView : UserControl, IAgentView
         }
         else { _context = ""; CtxChip.Visibility = Visibility.Collapsed; }
 
-        var app = App.Mind.Sensor.LastExternalApp;
-        InsertLabel.Text = app.Length > 0 ? $"Insert into {Pretty(app)}" : "Insert";
+        if (!_hooked) { _hooked = true; App.Mind.Sensor.ForegroundChanged += _ => Dispatcher.BeginInvoke(UpdateInsertLabel); }
+        UpdateInsertLabel();
         Ask.Tag = _context.Length > 0 ? "How should I reply?  e.g. yes, but Wednesday 3pm" : "What do you want to say?  e.g. tell Sam I'll be 10 min late";
         if (!string.IsNullOrEmpty(intent)) { Ask.Text = intent; Ask.CaretIndex = intent.Length; }
         Dispatcher.BeginInvoke(() => { Ask.Focus(); Keyboard.Focus(Ask); }, System.Windows.Threading.DispatcherPriority.Input);
         _ = App.Mind.Ollama.WarmAsync(App.Mind.Settings.WriterModel);   // load while the user types
         if (autoRun && !string.IsNullOrEmpty(intent)) _ = RunAsync(intent);
+    }
+
+    bool _hooked;
+    /// <summary>The button always names the window Insert will really go to, even if the user switches apps while the panel is pinned.</summary>
+    void UpdateInsertLabel()
+    {
+        var app = App.Mind.Sensor.LastExternalApp;
+        InsertLabel.Text = Native.IsTerminal(App.Mind.Sensor.LastExternalWindow) ? "Copy (paste it yourself in the terminal)"
+            : app.Length > 0 ? $"Insert into {Pretty(app)}" : "Insert";
     }
 
     static string Pretty(string proc) => proc.ToLowerInvariant() switch
@@ -95,7 +104,7 @@ public partial class QuillView : UserControl, IAgentView
             _lastAsk = ask;
             _thread.Clear();
             _thread.Add(new("system", Agents.QuillSystem(set.YourName.Trim())));
-            _thread.Add(new("user", (_context.Length > 0 ? $"<context>\n{_context}\n</context>\n" : "") + ask + "\n" + _tone));
+            _thread.Add(new("user", (_context.Length > 0 ? Gen.AsContext(_context) + "\n" : "") + ask + "\n" + _tone));
         }
         else
         {
@@ -141,6 +150,8 @@ public partial class QuillView : UserControl, IAgentView
         // never sign as the assistant, and keep a blank line after the subject
         t = Regex.Replace(t, @"\n\s*(Quill|\[[^\]]*name[^\]]*\])\s*$", "", RegexOptions.IgnoreCase).TrimEnd();
         t = Regex.Replace(t, @"^(Subject:[^\n]*)\n(?!\s*\n)", "$1\n\n");
+        // two sign-offs in a row ("Thanks,\nBest,") → keep the first
+        t = Regex.Replace(t, @"(\n(?:Thanks|Thank you|Best|Best regards|Regards|Cheers|Sincerely|Warmly),?)\s*\n(?:Thanks|Thank you|Best|Best regards|Regards|Cheers|Sincerely|Warmly),?\s*$", "$1", RegexOptions.IgnoreCase);
         return t;
     }
 

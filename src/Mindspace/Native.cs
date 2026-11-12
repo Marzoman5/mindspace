@@ -87,6 +87,20 @@ internal static class Native
         catch { return ""; }
     }
 
+    static readonly HashSet<string> Terminals = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "WindowsTerminal", "wt", "cmd", "powershell", "pwsh", "conhost", "OpenConsole", "bash", "wsl", "mintty", "alacritty",
+        "wezterm-gui", "putty", "kitty", "Hyper", "Tabby", "ConEmu64", "ConEmu", "git-bash", "ubuntu", "debian",
+        // remote sessions and VM consoles: keystrokes there land on another machine
+        "mstsc", "vmconnect", "vmware", "VirtualBoxVM", "MobaXterm", "SecureCRT", "Xshell", "ttermpro", "WinSCP",
+    };
+
+    /// <summary>
+    /// Terminals are special: pasted text can run as commands and Ctrl+C interrupts whatever is running.
+    /// Mindspace therefore never sends keystrokes to them; the user pastes there by hand.
+    /// </summary>
+    public static bool IsTerminal(nint hWnd) => hWnd != 0 && Terminals.Contains(ProcessName(hWnd));
+
     public static string? ProcessPath(nint hWnd)
     {
         try
@@ -151,6 +165,9 @@ internal static class Native
         return Math.Clamp(100.0 * (dTotal - dIdle) / dTotal, 0, 100);
     }
 
+    /// <summary>Raw counters (idle, kernel+user; kernel time includes idle) for callers that keep their own baseline.</summary>
+    public static (long idle, long total) CpuTimes() => GetSystemTimes(out var idle, out var kernel, out var user) ? (idle, kernel + user) : (0, 0);
+
     public static TimeSpan Uptime() => TimeSpan.FromMilliseconds(GetTickCount64());
 
     static INPUT Key(ushort vk, bool up) => new() { type = 1, ki = new KEYBDINPUT { wVk = vk, dwFlags = up ? 2u : 0u } };
@@ -165,6 +182,15 @@ internal static class Native
         inputs.AddRange([Key(0x11, false), Key(0x56, false), Key(0x56, true), Key(0x11, true)]);
         SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
     }
+
+    /// <summary>True while Ctrl, Alt, Shift or Win is physically held.</summary>
+    public static bool ModifiersDown() => new[] { 0x11, 0x12, 0x10, 0x5B, 0x5C }.Any(vk => (GetAsyncKeyState(vk) & 0x8000) != 0);
+
+    /// <summary>Sends Ctrl+C to the focused window. Only called from the user's own "use my selection" hotkeys.</summary>
+    public static void SendCopy() =>
+        SendInput(4, [Key(0x11, false), Key(0x43, false), Key(0x43, true), Key(0x11, true)], Marshal.SizeOf<INPUT>());
+
+    [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
 
     public static void TapWinKey() =>
         SendInput(2, [Key(0x5B, false), Key(0x5B, true)], Marshal.SizeOf<INPUT>());

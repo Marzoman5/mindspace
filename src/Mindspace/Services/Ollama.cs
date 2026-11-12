@@ -30,6 +30,8 @@ public sealed class Ollama
 
     public Ollama(Settings s) => _settings = s;
 
+    public static bool IsRemoteTag(string model) => model.Contains("cloud", StringComparison.OrdinalIgnoreCase) || model.Contains("://");
+
     public async Task<bool> IsUpAsync()
     {
         try
@@ -47,7 +49,7 @@ public sealed class Ollama
         {
             using var cts = new CancellationTokenSource(3000);
             var json = JsonNode.Parse(await _http.GetStringAsync("api/tags", cts.Token));
-            return json?["models"]?.AsArray().Select(m => m?["name"]?.GetValue<string>() ?? "").Where(n => n.Length > 0).OrderBy(n => n).ToList() ?? [];
+            return json?["models"]?.AsArray().Select(m => m?["name"]?.GetValue<string>() ?? "").Where(n => n.Length > 0 && !IsRemoteTag(n)).OrderBy(n => n).ToList() ?? [];
         }
         catch { return []; }
     }
@@ -71,6 +73,9 @@ public sealed class Ollama
     public async IAsyncEnumerable<string> ChatAsync(string model, IEnumerable<ChatMsg> messages, double temperature = 0.6,
         int maxTokens = 700, JsonNode? format = null, GenStats? stats = null, [EnumeratorCancellation] CancellationToken ct = default)
     {
+        // Ollama can proxy "cloud" model tags to a remote service. Mindspace promises on-device only, so refuse them here,
+        // at the single choke point every request passes through.
+        if (IsRemoteTag(model)) throw new OllamaException($"“{model}” is a cloud model. Mindspace only runs models on this PC — pick a local one in Settings.");
         var sw = Stopwatch.StartNew();
         HttpResponseMessage? resp = null;
         for (int attempt = 0; attempt < 2 && resp == null; attempt++)
@@ -85,7 +90,7 @@ public sealed class Ollama
             };
             if (!_noThink.Contains(model)) body["think"] = false;   // small models: answer, don't deliberate
             if (format != null) body["format"] = format.DeepClone();
-            var req = new HttpRequestMessage(HttpMethod.Post, "api/chat") { Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json") };
+            using var req = new HttpRequestMessage(HttpMethod.Post, "api/chat") { Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json") };
             var r = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             if (r.IsSuccessStatusCode) { resp = r; break; }
             var err = await r.Content.ReadAsStringAsync(ct);
@@ -136,6 +141,7 @@ public sealed class Ollama
     /// <summary>Loads a model into memory ahead of the first keystroke so the first answer is instant.</summary>
     public async Task WarmAsync(string model)
     {
+        if (IsRemoteTag(model)) return;
         try
         {
             var body = new JsonObject { ["model"] = model, ["keep_alive"] = $"{Math.Clamp(_settings.KeepAliveMinutes, 0, 60)}m" };
