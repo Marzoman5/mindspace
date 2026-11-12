@@ -3,7 +3,7 @@ using Mindspace.Services;
 
 if (args.Length >= 2 && args[0] == "--insert-target")
 {
-    var th = new Thread(() => InsertTarget.Run(args[1], args.Length > 2 ? int.Parse(args[2]) : 10, args.Length > 3 ? args[3] : "Insert target"));
+    var th = new Thread(() => InsertTarget.Run(args[1], args.Length > 2 ? int.Parse(args[2]) : 10, args.Length > 3 ? args[3] : "Insert target", args.Length > 4 ? args[4] : ""));
     th.SetApartmentState(ApartmentState.STA); th.Start(); th.Join();
     return 0;
 }
@@ -78,11 +78,11 @@ return fail;
 static class InsertTarget
 {
     [STAThread]
-    public static int Run(string outFile, int seconds, string title)
+    public static int Run(string outFile, int seconds, string title, string preselected)
     {
         var box = new System.Windows.Controls.TextBox { AcceptsReturn = true, FontSize = 16, Text = "" };
         var w = new System.Windows.Window { Title = title, Width = 420, Height = 220, Content = box, Topmost = true, WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen };
-        w.Loaded += (_, _) => { w.Activate(); box.Focus(); };
+        w.Loaded += (_, _) => { w.Activate(); box.Text = preselected; box.Focus(); box.SelectAll(); };
         var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
         t.Tick += (_, _) => { System.IO.File.WriteAllText(outFile, box.Text); w.Close(); };
         t.Start();

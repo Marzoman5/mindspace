@@ -43,7 +43,7 @@ Agents also offer help on their own: Quill when a mail or chat window is in fron
 
 | | |
 |---|---|
-| Download | one 399 KB exe, no third-party packages |
+| Download | one 0.4 MB exe, no third-party packages |
 | Idle | 45 MB private memory, about 0.2% of one CPU core |
 | GPU when idle | none: the UI is software-rendered, so it holds no VRAM and does not wake the RTX 4060 |
 | While answering | 2.9 GB VRAM for the model, about 46–50 tokens/s, first word in 0.2–0.4 s when warm |
@@ -62,7 +62,7 @@ Short version: the app talks only to the model server on this PC, agents can onl
 ## Known limits
 
 - Built and tested on one machine (Windows 11, 250% display scaling, primary monitor). The island and dock sit on the primary monitor only.
-- Insert and the selection hotkeys were tested against a plain text box, not against Outlook or Gmail themselves.
+- Insert and the selection hotkeys were tested against a plain text box with simulated key presses, not against Outlook or Gmail themselves, and not yet by a person.
 - The dock shows running windows, Start and a clock. It has no system tray, and maximised windows still leave the taskbar's strip free.
 - If another app already owns a hotkey, Mindspace's version silently does nothing; the island still works.
 - Small models make mistakes. Read a draft before sending it.
