@@ -20,6 +20,7 @@
             <!-- the active agent's colour, breathing behind the header -->
             <Ellipse x:Name="Aura" Width="520" Height="230" VerticalAlignment="Top" Margin="-40,-128,-40,0" IsHitTestVisible="False"/>
             <Grid>
+                <Grid.RenderTransform><TranslateTransform x:Name="ContentShift"/></Grid.RenderTransform>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>

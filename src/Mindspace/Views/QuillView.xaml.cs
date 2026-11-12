@@ -46,23 +46,60 @@ public partial class QuillView : UserControl, IAgentView
 
     public void Activate(string? intent, bool autoRun)
     {
-        // Offer the copied text as something to reply to. It is only sent to the local model if the user presses send.
-        var clip = Gen.ClipboardText();
-        if (clip.Length >= 40 && clip != Out.Text.Trim() && !ContextSensor.IsPrivate(clip))
+        // What is the draft answering? In order: the text the user selected, the mail or chat window they were in
+        // (read through accessibility, see WindowReader), then whatever they copied. It is shown in the chip, can be
+        // removed with one click, and only reaches the local model if the user presses send.
+        int pass = ++_ctxPass;
+        _context = ""; CtxChip.Visibility = Visibility.Collapsed;
+        if (intent != null && intent.StartsWith("@selection:"))
         {
-            _context = clip;
-            CtxText.Text = "Replying to what you copied:  “" + Gen.OneLine(clip, 70) + "”";
-            CtxChip.Visibility = Visibility.Visible;
+            SetContext(intent["@selection:".Length..], "Replying to your selection");
+            intent = null;
         }
-        else { _context = ""; CtxChip.Visibility = Visibility.Collapsed; }
+        else
+        {
+            var win = App.Mind.Sensor.LastExternalWindow;
+            var clip = Gen.ClipboardText();
+            if (clip.Length >= 40 && clip != Out.Text.Trim() && !ContextSensor.IsPrivate(clip)) SetContext(clip, "Replying to what you copied");
+            if (WindowReader.CanRead(win))
+            {
+                if (ContextSensor.LooksLikeConversation(win)) _ = AttachWindowAsync(win, pass);
+                else AddUseWindowChip(win);
+            }
+        }
 
         if (!_hooked) { _hooked = true; App.Mind.Sensor.ForegroundChanged += _ => Dispatcher.BeginInvoke(UpdateInsertLabel); }
         UpdateInsertLabel();
-        Ask.Tag = _context.Length > 0 ? "How should I reply?  e.g. yes, but Wednesday 3pm" : "What do you want to say?  e.g. tell Sam I'll be 10 min late";
+        if (_context.Length == 0) Ask.Tag = "What do you want to say?  e.g. tell Sam I'll be 10 min late";
         if (!string.IsNullOrEmpty(intent)) { Ask.Text = intent; Ask.CaretIndex = intent.Length; }
         Dispatcher.BeginInvoke(() => { Ask.Focus(); Keyboard.Focus(Ask); }, System.Windows.Threading.DispatcherPriority.Input);
         _ = App.Mind.Ollama.WarmAsync(App.Mind.Settings.WriterModel);   // load while the user types
         if (autoRun && !string.IsNullOrEmpty(intent)) _ = RunAsync(intent);
+    }
+
+    int _ctxPass;
+
+    void SetContext(string text, string label)
+    {
+        _context = text;
+        CtxText.Text = label + ":  “" + Gen.OneLine(text, 64) + "”";
+        CtxChip.Visibility = Visibility.Visible;
+        Ask.Tag = "How should I reply?  e.g. yes, but Wednesday 3pm";
+    }
+
+    async Task AttachWindowAsync(nint win, int pass)
+    {
+        var read = await WindowReader.ReadAsync(win, 8000);
+        if (pass != _ctxPass || read == null || read.Text.Length < 40) return;
+        SetContext(read.Text, (read.IsSelection ? "Replying to your selection in " : "Replying to what's open in ") + WindowReader.Pretty(read.App));
+    }
+
+    void AddUseWindowChip(nint win)
+    {
+        foreach (var old in Starters.Children.OfType<Button>().Where(b => Equals(b.Tag, "win")).ToList()) Starters.Children.Remove(old);
+        var b = new Button { Content = "Use what's open in " + WindowReader.Pretty(App.Mind.Sensor.LastExternalApp), Style = (Style)FindResource("Chip"), Tag = "win" };
+        b.Click += (_, _) => { Starters.Children.Remove(b); _ = AttachWindowAsync(win, _ctxPass); };
+        Starters.Children.Insert(0, b);
     }
 
     bool _hooked;
@@ -76,9 +113,7 @@ public partial class QuillView : UserControl, IAgentView
 
     static string Pretty(string proc) => proc.ToLowerInvariant() switch
     {
-        "chrome" => "Chrome", "msedge" => "Edge", "firefox" => "Firefox", "olk" or "outlook" => "Outlook", "winword" => "Word",
-        "code" => "VS Code", "slack" => "Slack", "ms-teams" or "teams" => "Teams", "notepad" => "Notepad", "discord" => "Discord",
-        var p => char.ToUpper(p[0]) + (p.Length > 14 ? p[1..14] + "…" : p[1..]),
+        var p => WindowReader.Pretty(p),
     };
 
     void Ask_KeyDown(object s, KeyEventArgs e)

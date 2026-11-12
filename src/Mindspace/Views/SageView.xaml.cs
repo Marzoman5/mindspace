@@ -15,10 +15,24 @@ public partial class SageView : UserControl, IAgentView
     int _epoch;
     static readonly string[] Ideas = ["How does compound interest work?", "What is an API, simply?", "Why is the sky blue?"];
 
-    public SageView()
+    readonly Agent _agent;
+    string SystemPrompt => _agent.IsCustom ? Agents.CustomSystem(_agent) : Agents.SageSystem;
+    bool SeesWindow => !_agent.IsCustom || _agent.SeesWindow;
+
+    public SageView() : this(Agents.Sage) { }
+
+    /// <summary>Sage, or one of the user's own agents: same conversation, different instructions.</summary>
+    public SageView(Agent agent)
     {
+        _agent = agent;
         InitializeComponent();
-        SendBtn.Background = Agents.Sage.Gradient();
+        SendBtn.Background = agent.Gradient();
+        if (agent.IsCustom)
+        {
+            EmptyTitle.Text = agent.Name;
+            EmptySub.Text = agent.Prompt.Length > 0 ? Gen.OneLine(agent.Prompt, 110) : "No instructions yet — add some in Settings.";
+            Ask.Tag = $"Ask {agent.Name}…";
+        }
         SetBusy(false);
     }
 
@@ -27,15 +41,17 @@ public partial class SageView : UserControl, IAgentView
         _clip = Gen.ClipboardText(4000);
         if (ContextSensor.IsPrivate(_clip)) _clip = "";
         if (_cts == null) ShowChips(_history.Count == 0 ? "start" : "follow");
-        if (intent == "@selection")
+        if (intent != null && intent.StartsWith("@selection:"))
         {
             // Alt+Shift+E on selected text: explain it straight away.
+            var sel = intent["@selection:".Length..];
             intent = null; autoRun = false;
-            if (_clip.Length >= 2) _ = RunAsync("Explain this:\n" + Gen.AsContext(_clip), "Explain  “" + Gen.OneLine(_clip, 80) + "”");
+            if (sel.Length >= 2) _ = RunAsync((_agent.IsCustom ? "Here is the text I selected:\n" : "Explain this:\n") + Gen.AsContext(sel), (_agent.IsCustom ? "“" : "Explain  “") + Gen.OneLine(sel, 80) + "”");
         }
         if (!string.IsNullOrEmpty(intent)) { Ask.Text = intent; Ask.CaretIndex = intent.Length; }
         Dispatcher.BeginInvoke(() => { Ask.Focus(); Keyboard.Focus(Ask); }, System.Windows.Threading.DispatcherPriority.Input);
         _ = App.Mind.Ollama.WarmAsync(App.Mind.Settings.ExplainerModel);
+        if (autoRun && intent != null && SeesWindow && AboutScreen(intent)) { Ask.Text = ""; _ = AskAboutWindowAsync(intent, intent); return; }
         if (autoRun && !string.IsNullOrEmpty(intent)) { Ask.Text = ""; _ = RunAsync(intent, intent); }
     }
 
@@ -44,9 +60,16 @@ public partial class SageView : UserControl, IAgentView
         Chips.Children.Clear();
         if (mode == "start")
         {
+            var win = App.Mind.Sensor.LastExternalWindow;
+            if (SeesWindow && WindowReader.CanRead(win))
+            {
+                string app = WindowReader.Pretty(App.Mind.Sensor.LastExternalApp);
+                AddChip((_agent.IsCustom ? "Use what's open in " : "Explain what's open in ") + app,
+                    () => _ = AskAboutWindowAsync(_agent.IsCustom ? "Apply your instructions to this window." : "Explain what this is about, briefly.", (_agent.IsCustom ? "Use what's open in " : "Explain what's open in ") + app), true);
+            }
             if (_clip.Length >= 12)
-                AddChip("Explain what I copied  ·  “" + Gen.OneLine(_clip, 26) + "”", () => _ = RunAsync("Explain this:\n" + Gen.AsContext(_clip), "Explain what I copied"), true);
-            foreach (var idea in Ideas) AddChip(idea, () => _ = RunAsync(idea, idea));
+                AddChip((_agent.IsCustom ? "Use what I copied  ·  “" : "Explain what I copied  ·  “") + Gen.OneLine(_clip, 22) + "”", () => _ = RunAsync((_agent.IsCustom ? "Here is what I copied:\n" : "Explain this:\n") + Gen.AsContext(_clip), "What I copied"));
+            if (!_agent.IsCustom) foreach (var idea in Ideas) AddChip(idea, () => _ = RunAsync(idea, idea));
         }
         else if (mode == "follow")
         {
@@ -57,10 +80,21 @@ public partial class SageView : UserControl, IAgentView
         }
     }
 
+    /// <summary>"what does this page say", "summarise this window": the question is about what is on screen.</summary>
+    static bool AboutScreen(string q) => System.Text.RegularExpressions.Regex.IsMatch(q, @"\b(this|the|my) (window|page|screen|site|article|email|message|chat|thread|document|doc|tab|pdf)\b|\bon (my |the )?screen\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>Reads the window the user was in (accessibility text, nothing stored) and asks about it.</summary>
+    async Task AskAboutWindowAsync(string question, string shown)
+    {
+        var read = await WindowReader.ReadAsync(App.Mind.Sensor.LastExternalWindow, 7000);
+        if (read == null) { await RunAsync(question, shown, "I couldn't read that window — it may not expose its text. Select the text and press Alt+Shift+E instead."); return; }
+        await RunAsync(question + "\n" + Gen.AsContext(read.Text), shown);
+    }
+
     void AddChip(string text, Action act, bool accent = false)
     {
         var b = new Button { Content = text, Style = (Style)FindResource("Chip") };
-        if (accent) b.BorderBrush = new SolidColorBrush(Color.FromArgb(150, 0x7F, 0x7F, 0xD5));
+        if (accent) b.BorderBrush = new SolidColorBrush(Color.FromArgb(150, _agent.Accent.R, _agent.Accent.G, _agent.Accent.B));
         else if (_history.Count == 0) b.Foreground = (Brush)FindResource("Muted");
         b.Click += (_, _) => act();
         Chips.Children.Add(b);
@@ -80,7 +114,7 @@ public partial class SageView : UserControl, IAgentView
         _ = RunAsync(q, q);
     }
 
-    async Task RunAsync(string prompt, string shown)
+    async Task RunAsync(string prompt, string shown, string? failure = null)
     {
         _cts?.Cancel();
         var cts = _cts = new CancellationTokenSource();
@@ -101,12 +135,19 @@ public partial class SageView : UserControl, IAgentView
         Thread.Children.Add(dots);
         Scroll.ScrollToEnd();
 
-        var msgs = new List<ChatMsg> { new("system", Agents.SageSystem) };
+        if (failure != null)
+        {
+            Thread.Children.Remove(dots);
+            Thread.Children.Add(new TextBlock { Text = failure, Foreground = (Brush)FindResource("Muted"), TextWrapping = TextWrapping.Wrap, FontSize = 12.5, Margin = new Thickness(2, 0, 0, 10) });
+            _cts = null; ShowChips(_history.Count == 0 ? "start" : "follow");
+            return;
+        }
+        var msgs = new List<ChatMsg> { new("system", SystemPrompt) };
         msgs.AddRange(_history.TakeLast(6));          // short memory keeps the context (and VRAM) small
         msgs.Add(new("user", prompt));
         SetBusy(true);
         bool swapped = false;
-        var r = await Gen.StreamAsync(Agents.Sage, App.Mind.Settings.ExplainerModel, msgs, t =>
+        var r = await Gen.StreamAsync(_agent, App.Mind.Settings.ExplainerModel, msgs, t =>
         {
             if (!swapped && t.Length > 0) { swapped = true; int i = Thread.Children.IndexOf(dots); Thread.Children.RemoveAt(i); Thread.Children.Insert(i, answer); }
             answer.Text = t;

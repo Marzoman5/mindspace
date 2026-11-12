@@ -26,6 +26,16 @@
         <GradientStop Color="#10FFFFFF" Offset="1"/>
     </LinearGradientBrush>
 
+    <!-- Frosted variant: thinner tint, because the compositor blurs the desktop behind it -->
+    <LinearGradientBrush x:Key="GlassFrost" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#B81A1A26" Offset="0"/>
+        <GradientStop Color="#C80E0E16" Offset="1"/>
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="GlassEdgeFrost" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#55FFFFFF" Offset="0"/>
+        <GradientStop Color="#1CFFFFFF" Offset="1"/>
+    </LinearGradientBrush>
+
     <Style x:Key="Icon" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Icons}"/>
         <Setter Property="FontSize" Value="13"/>

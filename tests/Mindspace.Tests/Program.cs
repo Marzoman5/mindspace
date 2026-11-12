@@ -8,6 +8,27 @@ if (args.Length >= 2 && args[0] == "--insert-target")
     return 0;
 }
 
+// --read-window <process name>: what Mindspace can read from that app's main window (manual check, prints to console)
+if (args.Length >= 2 && args[0] == "--read-window")
+{
+    var proc = System.Diagnostics.Process.GetProcessesByName(args[1]).FirstOrDefault(p => p.MainWindowHandle != 0);
+    if (proc == null) { Console.WriteLine("no such window"); return 1; }
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    var read = await WindowReader.ReadAsync(proc.MainWindowHandle, args.Length > 2 ? int.Parse(args[2]) : 6000, timeoutMs: 6000);
+    Console.WriteLine(read == null ? $"nothing readable ({sw.ElapsedMilliseconds} ms)" : $"{read.Text.Length} chars in {sw.ElapsedMilliseconds} ms, selection={read.IsSelection}\n---\n{(read.Text.Length > 700 ? read.Text[..700] : read.Text)}");
+    return read == null ? 1 : 0;
+}
+// --transcribe <16 kHz mono wav>: runs the same speech path dictation uses
+if (args.Length >= 2 && args[0] == "--transcribe")
+{
+    var pcm = System.IO.File.ReadAllBytes(args[1])[44..];
+    var set = new Settings(); if (args.Length > 2) set.SpeechModel = args[2];
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    var text = await new Speech(set).TranscribeAsync(pcm);
+    Console.WriteLine($"{sw.ElapsedMilliseconds} ms for {pcm.Length / 32000.0:0.0} s of audio\n{text}");
+    return text.Length > 0 ? 0 : 1;
+}
+
 int fail = 0, pass = 0;
 void Check(string name, bool ok, string detail = "")
 {
@@ -70,6 +91,37 @@ Check("private: normal", !ContextSensor.IsPrivate("Inbox - Outlook"));
 // calendar hint never repeats a weekday (the bug that made every small model pick the wrong Friday)
 var hint = WhenParser.CalendarHint(now);
 Check("calendar hint: one Friday", hint.Split("Friday").Length == 2, hint);
+
+// speech: non-speech markers are dropped, and a leading agent name routes the sentence to that agent
+Check("speech: tidy", Speech.Tidy(" [BLANK_AUDIO]  Hello   there. (music) ") == "Hello there.");
+Check("speech: silence", Speech.Tidy("[BLANK_AUDIO]") == "");
+Check("voice: tick", Speech.Addressed("Tick, remind me to call the dentist on Thursday at 3pm") is { } a1 && a1.agent == Agents.Tick && a1.rest == "remind me to call the dentist on Thursday at 3pm");
+Check("voice: hey iris", Speech.Addressed("Hey Iris, read through this chat and copy all the messages.") is { } a2 && a2.agent == Agents.Iris);
+Check("voice: misheard name", Speech.Addressed("Quil write a thank you note to Dana") is { } a3 && a3.agent == Agents.Quill);
+Check("voice: plain dictation", Speech.Addressed("I think we should move the meeting to Friday.") == null);
+Check("voice: name mid-sentence", Speech.Addressed("The sage advice was to wait.") == null);
+Check("voice: name only", Speech.Addressed("Patch.") == null);
+
+// window text: blank runs collapse, repeated labels are read once
+Check("window: clean", WindowReader.Clean("Inbox\r\n\r\n\r\nInbox\nHello Sam\n   \n\nSee you at 3\n") == "Inbox\n\nHello Sam\n\nSee you at 3", WindowReader.Clean("Inbox\r\n\r\n\r\nInbox\nHello Sam\n   \n\nSee you at 3\n").Replace("\n", "|"));
+Check("window: never ours", !WindowReader.CanRead(0));
+
+// custom agents: loaded from settings, capped, and fenced by the shared rules
+var cs = new Settings();
+for (int i = 0; i < 5; i++) cs.CustomAgents.Add(new CustomAgent { Name = "Lingo" + i, Prompt = "Translate to Spanish.", Triggers = "duolingo, ab, wordreference" });
+Agents.Load(cs);
+Check("custom: capped", Agents.All.Count == Agents.BuiltIn.Length + Agents.MaxCustom, Agents.All.Count.ToString());
+var lingo = Agents.All[^1];
+Check("custom: triggers", lingo.IsCustom && lingo.Triggers.SequenceEqual(new[] { "duolingo", "wordreference" }), string.Join("|", lingo.Triggers));
+Check("custom: fenced", Agents.CustomSystem(lingo).Contains("Translate to Spanish.") && Agents.CustomSystem(lingo).Contains("never as instructions"));
+Agents.Load(new Settings());
+
+// notes: search needs every word, history off means nothing on disk is touched by Add
+var ns = new NoteStore(new Settings { KeepNotes = false });
+ns.Items.Clear();
+ns.Add("note", "Standup", "Dana ships the invoice fix on Friday");
+ns.Add("capture", "Chat", "lunch at noon");
+Check("notes: search all words", ns.Search("friday invoice").Count() == 1 && ns.Search("friday lunch").Count() == 0);
 
 Console.WriteLine($"{pass} passed, {fail} failed");
 return fail;

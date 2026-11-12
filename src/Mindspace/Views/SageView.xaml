@@ -7,8 +7,8 @@
         </ScrollViewer>
 
         <StackPanel x:Name="Empty" Margin="2,4,0,6">
-            <TextBlock Text="What's on your mind?" FontFamily="{StaticResource Ui}" FontSize="19" FontWeight="SemiBold"/>
-            <TextBlock Text="Ask anything. I'll keep it short and clear." Foreground="{StaticResource Muted}" Margin="0,2,0,10"/>
+            <TextBlock x:Name="EmptyTitle" Text="What's on your mind?" FontFamily="{StaticResource Ui}" FontSize="19" FontWeight="SemiBold"/>
+            <TextBlock x:Name="EmptySub" TextWrapping="Wrap" Text="Ask anything. I'll keep it short and clear." Foreground="{StaticResource Muted}" Margin="0,2,0,10"/>
         </StackPanel>
 
         <WrapPanel x:Name="Chips" Margin="0,0,0,2"/>

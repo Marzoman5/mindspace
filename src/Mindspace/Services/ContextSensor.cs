@@ -52,6 +52,13 @@ public sealed class ContextSensor : IDisposable
         _dwell.Stop(); _dwell.Start();   // only react once the user has settled in a window
     }
 
+    /// <summary>True when the window looks like mail or chat: the place a reply would go.</summary>
+    public static bool LooksLikeConversation(nint hwnd)
+    {
+        string hay = (Native.ProcessName(hwnd) + " " + Native.WindowTitle(hwnd)).ToLowerInvariant();
+        return MailHints.Any(hay.Contains) || ChatHints.Any(hay.Contains);
+    }
+
     public static bool IsPrivate(string title) => PrivateHints.Any(h => title.Contains(h, StringComparison.OrdinalIgnoreCase));
 
     void Evaluate(nint hwnd)
@@ -64,6 +71,8 @@ public sealed class ContextSensor : IDisposable
 
         if (MailHints.Any(hay.Contains)) Offer("mail", new Suggestion(Agents.Quill, "Writing an email? I can draft it.", "write"));
         else if (ChatHints.Any(hay.Contains)) Offer("chat:" + proc, new Suggestion(Agents.Quill, "Need a reply worded nicely?", "write"), 45);
+        else if (Agents.All.FirstOrDefault(a => a.IsCustom && a.Triggers.Any(hay.Contains)) is { } mine)
+            Offer("custom:" + mine.Id, new Suggestion(mine, $"{mine.Role}: want a hand here?", "open"), 30);
         else if (LearnHints.Any(hay.Contains)) Offer("learn", new Suggestion(Agents.Sage, "Stuck on something? Ask me.", "explain"), 30);
     }
 

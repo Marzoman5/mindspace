@@ -15,9 +15,15 @@ public partial class App : Application
     public ReminderStore Reminders { get; private set; } = null!;
     public SystemMonitor Monitor { get; } = new();
     public ContextSensor Sensor { get; private set; } = null!;
+    public NoteStore Notes { get; private set; } = null!;
+    public Speech Speech { get; private set; } = null!;
+    public Recorder Mic { get; } = new();
     public HaloWindow Halo { get; private set; } = null!;
     public PanelWindow Panel { get; private set; } = null!;
     public DockWindow? Dock { get; private set; }
+
+    /// <summary>True when the glass is see-through with the desktop blurred behind it (Windows 11; can be switched off).</summary>
+    public static bool Frost { get; private set; }
 
     Mutex? _mutex;
     readonly DispatcherTimer _heartbeat = new() { Interval = TimeSpan.FromSeconds(3) };
@@ -45,12 +51,16 @@ public partial class App : Application
         if (!e.Args.Contains("--gpu-ui")) System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
 
         DispatcherUnhandledException += (_, ex) => { Log(ex.Exception); ex.Handled = true; };
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => Native.SetTaskbarVisible(true);
-        AppDomain.CurrentDomain.UnhandledException += (_, ex) => { Native.SetTaskbarVisible(true); Log(ex.ExceptionObject as Exception); };
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => RestoreShell();
+        AppDomain.CurrentDomain.UnhandledException += (_, ex) => { RestoreShell(); Log(ex.ExceptionObject as Exception); };
 
         Settings = Settings.Load();
+        Frost = Settings.Frost && Environment.OSVersion.Version.Build >= 22000;
         Ollama = new Ollama(Settings);
+        Agents.Load(Settings);
         Reminders = new ReminderStore();
+        Notes = new NoteStore(Settings);
+        Speech = new Speech(Settings);
         Sensor = new ContextSensor(Settings);
         Halo = new HaloWindow();
         Panel = new PanelWindow();
@@ -69,7 +79,7 @@ public partial class App : Application
         _heartbeat.Start();
         Monitor.Tick(false);
 
-        if (!Settings.Dock) Native.SetTaskbarVisible(true);   // self-heal if a previous run was killed while the dock was up
+        if (!Settings.Dock) RestoreShell();   // self-heal if a previous run was killed while the dock was up
         ApplyDock();
         _ = ListenAsync(_life.Token);
         _ = Ollama.TryStartAsync();
@@ -78,24 +88,40 @@ public partial class App : Application
         else if (!Settings.Welcomed) Dispatcher.BeginInvoke(() => Panel.Open("welcome"), DispatcherPriority.ApplicationIdle);
     }
 
+    /// <summary>Puts back the two things the dock borrows: the taskbar and the strip of screen it reserves.</summary>
+    public void RestoreShell()
+    {
+        Native.SetTaskbarVisible(true);
+        if (Settings?.TaskbarAutoHideBefore is bool before) { Native.TaskbarAutoHide = before; Settings.TaskbarAutoHideBefore = null; Settings.Save(); }
+    }
+
+    /// <summary>Hides the taskbar and frees its strip for windows, remembering how the user had it set.</summary>
+    public void BorrowShell()
+    {
+        if (Settings.TaskbarAutoHideBefore == null) { Settings.TaskbarAutoHideBefore = Native.TaskbarAutoHide; Settings.Save(); }
+        Native.TaskbarAutoHide = true;
+        Native.SetTaskbarVisible(false);
+    }
+
     public void ApplyDock()
     {
         if (Settings.Dock && Dock == null) { Dock = new DockWindow(); Dock.Show(); }
-        else if (!Settings.Dock && Dock != null) { Dock.Close(); Dock = null; Native.SetTaskbarVisible(true); }
+        else if (!Settings.Dock && Dock != null) { Dock.Close(); Dock = null; RestoreShell(); }
     }
 
     public void Quit()
     {
         _life.Cancel();
+        Mic.Stop();
         Sensor.Dispose();
         Dock?.Close();
-        Native.SetTaskbarVisible(true);
+        RestoreShell();
         Shutdown();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        Native.SetTaskbarVisible(true);
+        RestoreShell();
         base.OnExit(e);
     }
 
@@ -152,9 +178,12 @@ public partial class App : Application
             case "ask": Panel.Open(arg1, rest, autoRun: true); break;       // fills the box and presses send, as the user would
             case "peek": Halo.Peek(new Suggestion(Agents.ById(arg1), rest.Length > 0 ? rest : Agents.ById(arg1).Tagline, arg1 switch { "quill" => "write", "patch" => "diagnose", _ => "explain" })); break;
             case "hover": Halo.DemoExpand(); break;
+            case "dictate": Halo.ToggleDictation(handsFree: true); break;   // same as tapping Alt+Shift+D
             case "quit": Quit(); break;
 #if DEBUG
             // Debug builds only (never compiled into Release): lets the automated test press "Insert".
+            // Debug builds only: lets the automated test press Iris's Start button ("debug-start collect up" / "debug-start play").
+            case "debug-start": Panel.Open("iris", arg1 == "play" ? "keep playing this game" : "collect all messages " + rest); Dispatcher.BeginInvoke(() => Panel.DebugView<Views.IrisView>("iris")?.DebugStart(), DispatcherPriority.ApplicationIdle); break;
             case "debug-insert": Panel.InsertText(arg1 + (rest.Length > 0 ? " " + rest : "")); break;
 #endif
         }

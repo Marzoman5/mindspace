@@ -11,9 +11,11 @@ using Mindspace.Services;
 namespace Mindspace;
 
 /// <summary>
-/// Optional bubble dock. While it is showing, the Windows taskbar is hidden with ShowWindow(SW_HIDE) —
-/// no setting is changed, nothing is persisted, and the taskbar is shown again when the dock closes,
-/// when Mindspace exits, and on any crash path we can hook.
+/// Optional bubble dock. While it is on, the Windows taskbar is hidden with ShowWindow(SW_HIDE) and switched to
+/// auto-hide so windows can use the strip it reserved. Both are put back when the dock closes, when Mindspace exits,
+/// on any crash path we can hook, and at the next start if the process was killed (see App.RestoreShell).
+/// Like the island at the top, the dock gets out of the way: when the window you are working in reaches the bottom
+/// of the screen it drops down to a sliver, and comes back when the pointer touches the bottom edge.
 /// </summary>
 public sealed class DockWindow : Window
 {
@@ -21,7 +23,10 @@ public sealed class DockWindow : Window
     readonly TextBlock _time = new() { FontSize = 12.5, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Right };
     readonly TextBlock _date = new() { FontSize = 10, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, -1, 0, 0) };
     readonly Dictionary<string, ImageSource?> _icons = new();
+    readonly System.Windows.Threading.DispatcherTimer _leave = new() { Interval = TimeSpan.FromMilliseconds(700) };
     string _signature = "";
+    bool _down;
+    const double Gap = 8, Sliver = 5;
     static readonly IEasingFunction Ease = new CubicEase { EasingMode = EasingMode.EaseOut };
 
     public DockWindow()
@@ -47,29 +52,57 @@ public sealed class DockWindow : Window
 
         Content = new Border
         {
-            Child = row, Margin = new Thickness(16, 10, 16, 3), Padding = new Thickness(7, 5, 7, 5), CornerRadius = new CornerRadius(21),
-            Background = (Brush)FindResource("Glass"), BorderBrush = (Brush)FindResource("GlassEdge"), BorderThickness = new Thickness(1),
+            Child = row, Padding = new Thickness(7, 5, 7, 5), CornerRadius = new CornerRadius(App.Frost ? 8 : 21),
+            Background = (Brush)FindResource(App.Frost ? "GlassFrost" : "Glass"), BorderBrush = (Brush)FindResource(App.Frost ? "GlassEdgeFrost" : "GlassEdge"), BorderThickness = new Thickness(1),
         };
 
-        SourceInitialized += (_, _) => Native.AddExStyle(this, Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW);
-        SizeChanged += (_, _) => Reposition();
-        Loaded += (_, _) => { Native.SetTaskbarVisible(false); Refresh(); Reposition(); };
-        Closed += (_, _) => { App.Mind.Sensor.ForegroundChanged -= OnForeground; Native.SetTaskbarVisible(true); };
+        SourceInitialized += (_, _) => { Native.AddExStyle(this, Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW); if (App.Frost) Native.Frost(this); };
+        SizeChanged += (_, _) => Reposition(false);
+        Loaded += (_, _) => { App.Mind.BorrowShell(); Refresh(); Reposition(false); };
+        Closed += (_, _) => { App.Mind.Sensor.ForegroundChanged -= OnForeground; App.Mind.RestoreShell(); };
         App.Mind.Sensor.ForegroundChanged += OnForeground;
+        MouseEnter += (_, _) => { _leave.Stop(); SetDown(false); };
+        MouseLeave += (_, _) => { _leave.Stop(); _leave.Start(); };
+        _leave.Tick += (_, _) => { _leave.Stop(); if (!IsMouseOver) SetDown(InTheWay()); };
     }
 
-    void OnForeground(nint _) => Dispatcher.BeginInvoke(Refresh);
+    void OnForeground(nint _) => Dispatcher.BeginInvoke(() => { Refresh(); if (!IsMouseOver) SetDown(InTheWay()); });
 
-    void Reposition()
+    /// <summary>True when the window the user is working in covers the place where the dock floats.</summary>
+    bool InTheWay()
     {
+        var fg = Native.GetForegroundWindow();
+        if (fg == 0 || Native.IsIconic(fg) || Native.ProcessName(fg) == "Mindspace") return _down;
+        if (Native.ClassName(fg) is "Progman" or "WorkerW" or "Shell_TrayWnd") return false;      // the desktop itself
+        if (!Native.GetWindowRect(fg, out var r)) return false;
+        double k = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        double left = Left * k, right = (Left + ActualWidth) * k, top = (SystemParameters.PrimaryScreenHeight - ActualHeight - Gap) * k;
+        return r.Bottom > top + 2 && r.Left < right && r.Right > left;
+    }
+
+    void SetDown(bool down)
+    {
+        if (down == _down && IsLoaded) return;
+        _down = down;
+        Reposition(true);
+    }
+
+    void Reposition(bool animate)
+    {
+        BeginAnimation(TopProperty, null);
         Left = (SystemParameters.PrimaryScreenWidth - ActualWidth) / 2;
-        Top = SystemParameters.PrimaryScreenHeight - ActualHeight;
+        double to = _down ? SystemParameters.PrimaryScreenHeight - Sliver : SystemParameters.PrimaryScreenHeight - ActualHeight - Gap;
+        if (!animate || double.IsNaN(Top)) { Top = to; return; }
+        var a = new DoubleAnimation(Top, to, TimeSpan.FromMilliseconds(_down ? 220 : 180)) { EasingFunction = Ease, FillBehavior = FillBehavior.Stop };
+        a.Completed += (_, _) => Top = _down ? SystemParameters.PrimaryScreenHeight - Sliver : SystemParameters.PrimaryScreenHeight - ActualHeight - Gap;
+        BeginAnimation(TopProperty, a);
     }
 
     public void Heartbeat()
     {
         if (Native.IsTaskbarVisible()) Native.SetTaskbarVisible(false);   // Explorer sometimes brings it back
         Refresh();
+        if (!IsMouseOver) SetDown(InTheWay());
     }
 
     FrameworkElement Divider() => new Rectangle { Width = 1, Height = 20, Fill = (Brush)FindResource("Line"), Margin = new Thickness(7, 0, 7, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -77,7 +110,7 @@ public sealed class DockWindow : Window
     FrameworkElement StartButton()
     {
         var g = new UniformGrid { Rows = 2, Columns = 2, Width = 17, Height = 17 };
-        foreach (var a in Agents.All) g.Children.Add(new Rectangle { Fill = a.Gradient(), RadiusX = 2, RadiusY = 2, Margin = new Thickness(1) });
+        foreach (var a in new[] { Agents.Quill, Agents.Tick, Agents.Sage, Agents.Patch }) g.Children.Add(new Rectangle { Fill = a.Gradient(), RadiusX = 2, RadiusY = 2, Margin = new Thickness(1) });
         return Bubble(g, "Start", () => Native.TapWinKey(), false, false);
     }
 
@@ -107,6 +140,10 @@ public sealed class DockWindow : Window
         b.RenderTransform.BeginAnimation(ScaleTransform.ScaleYProperty, a);
     }
 
+    // Looking up a window's program is the costly part of the 3-second refresh, and it never changes for a window.
+    readonly Dictionary<nint, string> _names = new();
+    string ProcName(nint h) => _names.TryGetValue(h, out var n) ? n : _names[h] = Native.ProcessName(h);
+
     void Refresh()
     {
         var now = DateTime.Now;
@@ -114,7 +151,8 @@ public sealed class DockWindow : Window
         _date.Text = now.ToString("ddd, MMM d");
 
         var fg = Native.GetForegroundWindow();
-        var windows = Native.TaskbarWindows().Where(h => Native.ProcessName(h) != "Mindspace").Take(14).ToList();
+        if (_names.Count > 200) _names.Clear();
+        var windows = Native.TaskbarWindows().Where(h => ProcName(h) != "Mindspace").Take(14).ToList();
         var sig = string.Join(",", windows) + "|" + fg;
         if (sig == _signature) return;     // nothing changed: no layout work
         _signature = sig;

@@ -29,17 +29,9 @@ public partial class HaloWindow : Window
         Top = 0;
         Island.ToolTip = "Mindspace  ·  Ctrl+Alt+Space";
 
-        foreach (var a in Agents.All)
-        {
-            var orb = new AgentOrb { Agent = a, Width = 24, Height = 24, Margin = new Thickness(6, 0, 6, 0), Cursor = Cursors.Hand, ToolTip = $"{a.Name} · {a.Role}" };
-            ToolTipService.SetInitialShowDelay(orb, 350);
-            orb.MouseLeftButtonUp += (_, e) => { e.Handled = true; App.Mind.Panel.Open(a.Id); Collapse(); };
-            orb.MouseEnter += (_, _) => Lift(orb, 1.18);
-            orb.MouseLeave += (_, _) => Lift(orb, 1);
-            orb.RenderTransformOrigin = new Point(0.5, 0.5);
-            orb.RenderTransform = new ScaleTransform(1, 1);
-            Orbs.Children.Add(orb);
-        }
+        BuildOrbs();
+        Agents.Changed += BuildOrbs;
+        InitVoice();
 
         _intent.Tick += (_, _) =>
         {
@@ -63,15 +55,38 @@ public partial class HaloWindow : Window
             // Alt+Shift+E / Alt+Shift+W: act on the text currently selected in any app (not Ctrl+Alt: that is AltGr on many keyboards).
             Native.RegisterHotKey(Native.Handle(this), HotkeyExplain, Native.MOD_ALT | Native.MOD_SHIFT | Native.MOD_NOREPEAT, 0x45);
             Native.RegisterHotKey(Native.Handle(this), HotkeyWrite, Native.MOD_ALT | Native.MOD_SHIFT | Native.MOD_NOREPEAT, 0x57);
+            // Alt+Shift+D: hold to dictate (see HaloWindow.Voice.cs).
+            Native.RegisterHotKey(Native.Handle(this), HotkeyDictate, Native.MOD_ALT | Native.MOD_SHIFT | Native.MOD_NOREPEAT, 0x44);
             Native.AddClipboardFormatListener(Native.Handle(this));
         };
-        Closed += (_, _) => { foreach (var id in new[] { HotkeyId, HotkeyExplain, HotkeyWrite }) Native.UnregisterHotKey(Native.Handle(this), id); Native.RemoveClipboardFormatListener(Native.Handle(this)); };
+        Closing += (_, _) => { foreach (var id in new[] { HotkeyId, HotkeyExplain, HotkeyWrite, HotkeyDictate }) Native.UnregisterHotKey(Native.Handle(this), id); Native.RemoveClipboardFormatListener(Native.Handle(this)); };
+    }
+
+    double _wide = 172;
+    void BuildOrbs()
+    {
+        Orbs.Children.Clear();
+        int n = Agents.All.Count;
+        double size = n > 7 ? 21 : 24, gap = n > 7 ? 4 : n > 4 ? 5 : 6;
+        _wide = 28 + n * (size + gap * 2);
+        foreach (var a in Agents.All)
+        {
+            var orb = new AgentOrb { Agent = a, Width = size, Height = size, Margin = new Thickness(gap, 0, gap, 0), Cursor = Cursors.Hand, ToolTip = $"{a.Name} · {a.Role}" };
+            ToolTipService.SetInitialShowDelay(orb, 350);
+            orb.MouseLeftButtonUp += (_, e) => { e.Handled = true; App.Mind.Panel.Open(a.Id); Collapse(); };
+            orb.MouseEnter += (_, _) => Lift(orb, 1.18);
+            orb.MouseLeave += (_, _) => Lift(orb, 1);
+            orb.RenderTransformOrigin = new Point(0.5, 0.5);
+            orb.RenderTransform = new ScaleTransform(1, 1);
+            Orbs.Children.Add(orb);
+        }
     }
 
     nint WndProc(nint hwnd, int msg, nint wParam, nint lParam, ref bool handled)
     {
         if (msg == Native.WM_HOTKEY && wParam == HotkeyId) { App.Mind.Panel.Toggle(); handled = true; }
         else if (msg == Native.WM_HOTKEY && (wParam == HotkeyExplain || wParam == HotkeyWrite)) { _ = UseSelectionAsync(wParam == HotkeyExplain ? "sage" : "quill"); handled = true; }
+        else if (msg == Native.WM_HOTKEY && wParam == HotkeyDictate) { ToggleDictation(); handled = true; }
         else if (msg == Native.WM_CLIPBOARDUPDATE && App.Mind.Settings.ClipboardSensing)
         {
             // Opt-in only. Text is examined by a local regex and dropped; see ContextSensor.
@@ -106,11 +121,16 @@ public partial class HaloWindow : Window
             for (int i = 0; i < 40 && Native.ModifiersDown(); i++) await Task.Delay(25);   // let go of Alt+Shift first
             // Re-check after the wait: the user must still be in the same window, with no modifier held.
             if (Native.ModifiersDown() || Native.GetForegroundWindow() != fg) { App.Mind.Panel.Open(agent); return; }
+            // Preferred: read the selection through the accessibility interface. Nothing is typed and the clipboard is untouched.
+            var sel = await WindowReader.ReadAsync(fg, 6000, selectionOnly: true, timeoutMs: 900);
+            if (sel != null && sel.Text.Length >= 2) { App.Mind.Panel.Open(agent, "@selection:" + sel.Text, autoRun: agent == "sage"); return; }
+            // Fallback for apps that don't expose their selection: copy it exactly as Ctrl+C would.
             uint before = Native.GetClipboardSequenceNumber();
             Native.SendCopy();
             for (int i = 0; i < 12 && Native.GetClipboardSequenceNumber() == before; i++) await Task.Delay(25);
             bool copied = Native.GetClipboardSequenceNumber() != before;
-            if (agent == "sage" && copied) App.Mind.Panel.Open("sage", "@selection", autoRun: true);
+            var clip = copied ? Views.Gen.ClipboardText() : "";
+            if (clip.Length >= 2) App.Mind.Panel.Open(agent, "@selection:" + clip, autoRun: agent == "sage");
             else App.Mind.Panel.Open(agent);
         }
         finally { _grabbing = false; }
@@ -135,7 +155,7 @@ public partial class HaloWindow : Window
     {
         if (_expanded) return;
         _expanded = true;
-        Animate(Island, WidthProperty, 172, 260, Spring);
+        Animate(Island, WidthProperty, _wide, 260, Spring);
         Animate(Island, HeightProperty, 42, 260, Spring);
         Animate(Spark, OpacityProperty, 0, 120);
         Orbs.Visibility = Visibility.Visible;
@@ -172,6 +192,7 @@ public partial class HaloWindow : Window
     public void Peek(Suggestion s)
     {
         if (App.Mind.Panel.IsOpen && s.Kind != "due") return;   // never interrupt an open conversation
+        if (IsDictating) return;                                // the "Listening" card stays put
         _peek = s;
         PeekOrb.Agent = s.Agent;
         PeekName.Text = s.Kind == "due" ? $"{s.Agent.Name} · reminder" : s.Agent.Name;
@@ -214,9 +235,11 @@ public partial class HaloWindow : Window
     void Peek_Click(object s, MouseButtonEventArgs e)
     {
         if (_peek == null || e.OriginalSource is DependencyObject d && FindParent<Button>(d) != null) return;
-        var p = _peek; HidePeek();
+        var p = _peek;
+        if (!(p.Kind == "status" && _talk.IsEnabled)) HidePeek();
         switch (p.Kind)
         {
+            case "status": if (_talk.IsEnabled) ToggleDictation(); else App.Mind.Panel.Open(p.Agent.Id); return;
             case "due": App.Mind.Panel.Open("tick"); break;
             case "remind": App.Mind.Panel.Open("tick", (p.Payload as WhenParser.Result)?.Title); break;
             case "diagnose": App.Mind.Panel.Open("patch", "diagnose", autoRun: true); break;
@@ -231,8 +254,8 @@ public partial class HaloWindow : Window
     }
 
     void Peek_Enter(object s, MouseEventArgs e) => _peekTimer.Stop();
-    void Peek_Leave(object s, MouseEventArgs e) { if (_peek != null) { _peekTimer.Interval = TimeSpan.FromSeconds(3); _peekTimer.Start(); } }
-    void Peek_Close(object s, RoutedEventArgs e) => HidePeek();
+    void Peek_Leave(object s, MouseEventArgs e) { if (_peek != null && !IsDictating) { _peekTimer.Interval = TimeSpan.FromSeconds(3); _peekTimer.Start(); } }
+    void Peek_Close(object s, RoutedEventArgs e) { if (_talk.IsEnabled) { _talk.Stop(); App.Mind.Mic.Stop(); } HidePeek(); }
 
     public void HidePeek()
     {
